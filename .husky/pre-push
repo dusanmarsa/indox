@@ -1,0 +1,5 @@
+# Catches what CI catches, locally and before the network round trip.
+# Skip with `git push --no-verify` only when you really mean it.
+
+bun --filter '*' typecheck || exit 1
+bun --filter @indox/web lint || exit 1

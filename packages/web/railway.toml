@@ -1,0 +1,20 @@
+# Railway config for the web service.
+# In Railway: Settings → Service → Config-as-Code → Config Path = packages/web/railway.toml
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "bun install --frozen-lockfile && bun run db:generate && bun --filter @indox/web build"
+
+[deploy]
+# `cd` instead of `bun --filter` here — Nixpacks' final COPY step in the
+# build image rewrites workspace metadata, so the filter can't resolve
+# `@indox/core` at pre-deploy time. cd works because prisma migrate doesn't
+# care about the workspace graph.
+preDeployCommand = "cd packages/core && bunx prisma migrate deploy"
+startCommand = "bun --filter @indox/web start"
+
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
