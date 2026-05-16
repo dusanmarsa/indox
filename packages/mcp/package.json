@@ -1,0 +1,24 @@
+{
+  "name": "@indox/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "scripts": {
+    "dev": "bunx --bun xmcp dev",
+    "build": "bunx --bun xmcp build",
+    "start:stdio": "bun ./dist/stdio.js",
+    "start:http": "bun ./dist/http.js",
+    "typecheck": "bunx --bun tsc --noEmit"
+  },
+  "dependencies": {
+    "@indox/core": "workspace:*",
+    "xmcp": "^0.6.9",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/express": "^5.0.6",
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

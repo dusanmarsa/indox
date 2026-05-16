@@ -1,0 +1,50 @@
+{
+  "name": "indox",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun --filter '@indox/web' --filter '@indox/worker' dev",
+    "dev:web": "bun --filter @indox/web dev",
+    "dev:worker": "bun --filter @indox/worker dev",
+    "build": "bun --filter @indox/web build",
+    "start": "bun --filter @indox/web start",
+    "start:worker": "bun --filter @indox/worker start",
+    "lint": "bun --filter '*' lint",
+    "test": "bun test",
+    "typecheck": "bun --filter '*' typecheck",
+    "db:migrate": "bun --filter @indox/core db:migrate",
+    "db:push": "bun --filter @indox/core db:push",
+    "db:studio": "bun --filter @indox/core db:studio",
+    "db:generate": "bun --filter @indox/core db:generate",
+    "prepare": "bunx --bun husky"
+  },
+  "lint-staged": {
+    "packages/web/**/*.{ts,tsx,js,jsx}": "sh -c 'cd packages/web && exec bun --bun ./node_modules/eslint/bin/eslint.js --fix \"$@\"' --"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "trustedDependencies": [
+    "sharp",
+    "unrs-resolver"
+  ],
+  "ignoreScripts": [
+    "sharp",
+    "unrs-resolver",
+    "@prisma/client"
+  ],
+  "overrides": {
+    "postcss": "^8.5.10",
+    "@hono/node-server": "^1.19.13"
+  }
+}

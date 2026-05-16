@@ -1,0 +1,42 @@
+{
+  "name": "@indox/core",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "bunx --bun tsc --noEmit",
+    "db:reset": "bunx --bun --env-file=../../.env prisma migrate reset",
+    "db:migrate": "bunx --bun --env-file=../../.env prisma migrate dev",
+    "db:push": "bunx --bun --env-file=../../.env prisma db push",
+    "db:studio": "bunx --bun --env-file=../../.env prisma studio",
+    "db:generate": "bunx --bun prisma generate"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "3.0.63",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "@prisma/client-runtime-utils": "^7.8.0",
+    "ai": "6.0.180",
+    "dotenv": "^17.2.4",
+    "fflate": "^0.8.2",
+    "pg": "^8.20.0",
+    "pg-boss": "^10.1.5",
+    "prisma": "^7.8.0",
+    "tsx": "^4.21.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/node": "^20",
+    "@types/pg": "^8.20.0",
+    "typescript": "^5"
+  },
+  "ignoreScripts": [
+    "@prisma/client"
+  ]
+}

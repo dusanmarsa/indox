@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// An Adapter is a configured connection to an external data source
+// (GitHub, Confluence, …). It owns credentials and a scope describing
+// what to ingest. Each adapter exposes one or more Sources.
+model Adapter {
+  id            String    @id @default(cuid())
+  // Same shape as Conversation.ownerKey — the `indox_session` cookie today,
+  // a real user id when auth lands. Pre-existing rows from before this column
+  // existed are tagged with the legacy sentinel "" so they remain visible to
+  // an admin path but not to anonymous sessions.
+  ownerKey      String    @map("owner_key") @default("")
+  kind          String    // "github" | "confluence" | …
+  authIdentity  String?   @map("auth_identity")  // e.g. Confluence email; null for GitHub PAT
+  // AES-256-GCM ciphertext prefixed with `enc:v1:` (see core/src/crypto.ts).
+  // Legacy plaintext values are still readable for one release.
+  token         String
+  scope         Json                                  // adapter-specific, see core/src/adapters
+  lastSyncedAt  DateTime? @map("last_synced_at")
+  syncStatus    String?   @map("sync_status")          // "idle" | "running" | "ready" | "failed"
+  syncError     String?   @map("sync_error")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  sources       Source[]
+
+  @@index([ownerKey])
+  @@map("adapters")
+}
+
+// A Source is a single indexable thing inside an Adapter: a GitHub repo,
+// a Confluence space, etc. The Adapter's enumerate step creates Sources;
+// the index step fills Embeddings for each Source.
+model Source {
+  id            String    @id @default(cuid())
+  adapterId     String    @map("adapter_id")
+  kind          String                                // mirrors Adapter.kind for fast filtering
+  externalId    String    @map("external_id")         // e.g. "owner/name" or "SPACEKEY"
+  displayName   String    @map("display_name")
+  metadata      Json?                                  // sha for git, version for confluence, …
+  indexStatus   String?   @map("index_status")        // "idle" | "running" | "ready" | "failed"
+  indexedAt     DateTime? @map("indexed_at")
+  indexError    String?   @map("index_error")
+  chunkCount    Int?      @map("chunk_count")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  adapter       Adapter   @relation(fields: [adapterId], references: [id], onDelete: Cascade)
+  embeddings    Embedding[]
+
+  @@unique([adapterId, externalId])
+  @@index([adapterId])
+  @@map("sources")
+}
+
+model Embedding {
+  id           Int                          @id @default(autoincrement())
+  sourceId     String                       @map("source_id")
+  chunkText    String                       @map("chunk_text")
+  chunkUrl     String?                      @map("chunk_url")
+  embedding    Unsupported("vector(1536)")?
+  // Generated column (STORED) — populated by Postgres from chunk_text.
+  // Queried via raw SQL for hybrid retrieval; never written from app code.
+  chunkTextTsv Unsupported("tsvector")?     @map("chunk_text_tsv")
+
+  source       Source                       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId])
+  @@map("embeddings")
+}
+
+// Anonymous chat history. `ownerKey` is whatever opaque identifier the caller
+// uses to scope conversations to a single user — currently the value of the
+// `indox_session` cookie set by the web app on first visit. When real auth
+// lands, the same column stores the user id instead; nothing else changes.
+model Conversation {
+  id        String   @id @default(cuid())
+  ownerKey  String   @map("owner_key")
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  messages  ConversationMessage[]
+
+  @@index([ownerKey, updatedAt])
+  @@map("conversations")
+}
+
+// One row per UIMessage — `parts` stores the AI SDK's parts array verbatim so
+// reload reconstructs tool calls, search results, and text exactly as the
+// user saw them mid-session.
+model ConversationMessage {
+  id             String   @id @default(cuid())
+  conversationId String   @map("conversation_id")
+  role           String   // "user" | "assistant" | "system" | "tool"
+  parts          Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("conversation_messages")
+}
+
+model UsageLog {
+  ip         String
+  date       DateTime @default(now())
+  queryCount Int      @default(0) @map("query_count")
+
+  @@id([ip, date])
+  @@map("usage_log")
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────
+// Tables managed by better-auth (https://better-auth.com). Field names use
+// camelCase here because better-auth's Prisma adapter reads them that way;
+// the actual SQL columns are lowercased via @map where noted.
+
+// `mcpToken` is our addition — a long random secret the user copies into
+// their MCP client config (Cursor/Claude). The MCP server resolves it back
+// to this user.id and scopes every tool call to that owner.
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified Boolean   @default(false) @map("email_verified")
+  image         String?
+  mcpToken      String?   @unique @map("mcp_token")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  sessions Session[]
+  accounts Account[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String    @map("user_id")
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verifications")
+}

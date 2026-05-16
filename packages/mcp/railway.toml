@@ -1,0 +1,17 @@
+# Railway config for the MCP server.
+# In Railway: Settings → Service → Config-as-Code → Config Path = packages/mcp/railway.toml
+#
+# Public endpoint. Tools authenticate via the per-user bearer token from
+# /dashboard/mcp; every tool call is scoped to that user's indexed sources.
+# Set PORT=3030 on the service (xmcp bakes the port at build time, so
+# Railway must route to whatever was baked).
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "bun install --frozen-lockfile && bun run db:generate && bun --filter @indox/mcp build"
+
+[deploy]
+startCommand = "cd packages/mcp && bun ./dist/http.js"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+numReplicas = 1

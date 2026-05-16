@@ -1,0 +1,191 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Streamdown ships Tailwind classes in its compiled JS for the code-block
+   header, copy/download buttons, mermaid wrapper, etc. Tailwind v4 doesn't
+   scan node_modules by default, so we have to opt this package in or the
+   chrome ends up unstyled. */
+@source "../../../node_modules/streamdown/dist/*.js";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --indox-bg: #ffffff;
+  --indox-surface: #f4f4f3;
+  --indox-border: #e8e8e7;
+  --indox-text: #111110;
+  --indox-muted: #808080;
+  --indox-dim: #b0b0af;
+  --indox-accent: #c05a3d;            /* stark coral */
+  --indox-ok: #3d6b50;
+  --indox-nav-bg: rgba(255, 255, 255, 0.94);
+  --indox-selection-bg: var(--indox-accent);
+  --indox-selection-fg: #fff;
+}
+
+.dark {
+  --indox-bg: #0b0a09;
+  --indox-surface: #131210;
+  --indox-border: #3e3e3e;
+  --indox-text: #f8f5ef;
+  --indox-muted: #a09d97;
+  --indox-dim: #797672;
+  --indox-accent: #c8671a;            /* sienna */
+  --indox-ok: #4a7c5f;
+  --indox-nav-bg: rgba(11, 10, 9, 0.92);
+}
+
+:root {
+  --background: var(--indox-bg);
+  --foreground: var(--indox-text);
+  --card: var(--indox-bg);
+  --card-foreground: var(--indox-text);
+  --popover: var(--indox-bg);
+  --popover-foreground: var(--indox-text);
+  --primary: oklch(0 0 0);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: var(--indox-surface);
+  --secondary-foreground: var(--indox-text);
+  --muted: var(--indox-surface);
+  --muted-foreground: var(--indox-muted);
+  --accent: var(--indox-surface);
+  --accent-foreground: var(--indox-text);
+  --destructive: oklch(0.6300 0.1900 23.0300);
+  --border: var(--indox-border);
+  --input: var(--indox-border);
+  --ring: var(--indox-accent);
+  --chart-1: oklch(0.8100 0.1700 75.3500);
+  --chart-2: oklch(0.5500 0.2200 264.5300);
+  --chart-3: oklch(0.7200 0 0);
+  --chart-4: oklch(0.9200 0 0);
+  --chart-5: oklch(0.5600 0 0);
+  --sidebar: var(--indox-bg);
+  --sidebar-foreground: var(--indox-text);
+  --sidebar-primary: oklch(0 0 0);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: var(--indox-surface);
+  --sidebar-accent-foreground: var(--indox-text);
+  --sidebar-border: var(--indox-border);
+  --sidebar-ring: var(--indox-accent);
+  --radius: 0.625rem;
+}
+
+.dark {
+  --primary: oklch(1 0 0);
+  --primary-foreground: oklch(0 0 0);
+  --destructive: oklch(0.6900 0.2000 23.9100);
+  --chart-2: oklch(0.5800 0.2100 260.8400);
+  --chart-3: oklch(0.5600 0 0);
+  --chart-4: oklch(0.4400 0 0);
+  --chart-5: oklch(0.9200 0 0);
+  --sidebar-primary: oklch(1 0 0);
+  --sidebar-primary-foreground: oklch(0 0 0);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-geist-sans: 'Geist', sans-serif;
+  --font-geist-mono: 'Geist Mono', ui-monospace, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+::selection {
+  background: var(--indox-selection-bg, var(--indox-accent));
+  color: var(--indox-selection-fg, #fff);
+}
+
+
+.indox-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.55s ease,
+    transform 0.55s ease;
+}
+.indox-reveal-in {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .indox-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+body {
+  line-height: 1.5;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  -ms-text-size-adjust: none;
+  -webkit-text-size-adjust: none;
+  overflow-x: hidden
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  html {
+    @apply font-geist-sans;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+.message-body :not(pre) > code {
+  @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground;
+}
+
+.dark .message-body pre,
+.dark .message-body pre code,
+.dark .message-body pre span {
+  color: var(--shiki-dark, inherit) !important;
+  background-color: var(--shiki-dark-bg, transparent) !important;
+}
