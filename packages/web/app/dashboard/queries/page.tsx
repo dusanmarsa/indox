@@ -2,14 +2,14 @@ export const dynamic = "force-dynamic";
 
 import { ActivityChart } from "@/components/dashboard/ActivityChart";
 import { getRecentQueries, getActivityData, getDashboardStats } from "@/lib/dashboard-data";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 
 export default async function QueriesPage() {
-  const ownerKey = await requireOwnerKey();
+  const { workspace } = await requireWorkspace();
   const [queries, activity, stats] = await Promise.all([
     getRecentQueries(),
     getActivityData(),
-    getDashboardStats(ownerKey),
+    getDashboardStats(workspace.id),
   ]);
 
   const subtitle = `${stats.queriesToday.toLocaleString()} queries today · ${queries.length} cached`;

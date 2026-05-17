@@ -1,9 +1,9 @@
 import { listSources } from "@indox/core";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 
 export async function GET() {
-  const ownerKey = await requireOwnerKey();
-  const sources = await listSources({ readyOnly: true, ownerKey });
+  const { workspace } = await requireWorkspace();
+  const sources = await listSources({ readyOnly: true, workspaceId: workspace.id });
   return Response.json({
     sources: sources.map((s) => ({
       id: s.id,

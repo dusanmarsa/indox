@@ -2,11 +2,11 @@ export const dynamic = "force-dynamic";
 
 import { getDashboardSources } from "@/lib/dashboard-data";
 import SourcesTable from "@/components/dashboard/SourcesTable";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 
 export default async function SourcesPage() {
-  const ownerKey = await requireOwnerKey();
-  const sources = await getDashboardSources(ownerKey);
+  const { workspace } = await requireWorkspace();
+  const sources = await getDashboardSources(workspace.id);
   const syncedCount = sources.filter((s) => s.status === "ok").length;
   const warnCount = sources.filter((s) => s.status === "warn").length;
 

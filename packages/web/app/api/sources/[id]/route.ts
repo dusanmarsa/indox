@@ -5,14 +5,14 @@ import {
   enqueueSourceSync,
   logger,
 } from "@indox/core";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 import { isSameOrigin, csrfReject } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
-async function authorize(sourceId: string, ownerKey: string): Promise<boolean> {
+async function authorize(sourceId: string, workspaceId: string): Promise<boolean> {
   const row = await prisma.source.findFirst({
-    where: { id: sourceId, adapter: { ownerKey } },
+    where: { id: sourceId, adapter: { workspaceId } },
     select: { id: true },
   });
   return !!row;
@@ -23,9 +23,9 @@ export async function DELETE(
   ctx: { params: Promise<{ id: string }> },
 ) {
   if (!isSameOrigin(req)) return csrfReject();
-  const ownerKey = await requireOwnerKey();
+  const { workspace } = await requireWorkspace();
   const { id } = await ctx.params;
-  if (!(await authorize(id, ownerKey))) {
+  if (!(await authorize(id, workspace.id))) {
     return NextResponse.json({ error: "source not found" }, { status: 404 });
   }
   const result = await removeSourceFromAdapter(id);
@@ -40,9 +40,9 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> },
 ) {
   if (!isSameOrigin(req)) return csrfReject();
-  const ownerKey = await requireOwnerKey();
+  const { workspace } = await requireWorkspace();
   const { id } = await ctx.params;
-  if (!(await authorize(id, ownerKey))) {
+  if (!(await authorize(id, workspace.id))) {
     return NextResponse.json({ error: "source not found" }, { status: 404 });
   }
   enqueueSourceSync(id).catch((err) =>

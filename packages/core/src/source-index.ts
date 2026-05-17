@@ -146,24 +146,34 @@ export async function listAdapters() {
 }
 
 export async function listSources(
-  opts: { adapterId?: string; readyOnly?: boolean; ownerKey?: string } = {},
+  opts: {
+    adapterId?: string;
+    readyOnly?: boolean;
+    // Restrict to a single workspace, or a set (MCP tokens can carry many).
+    workspaceId?: string;
+    workspaceIds?: string[];
+  } = {},
 ) {
+  const workspaceFilter =
+    opts.workspaceId !== undefined
+      ? { adapter: { workspaceId: opts.workspaceId } }
+      : opts.workspaceIds !== undefined
+        ? { adapter: { workspaceId: { in: opts.workspaceIds } } }
+        : {};
   return prisma.source.findMany({
     where: {
       ...(opts.adapterId ? { adapterId: opts.adapterId } : {}),
       ...(opts.readyOnly ? { indexStatus: "ready" } : {}),
-      ...(opts.ownerKey !== undefined
-        ? { adapter: { ownerKey: opts.ownerKey } }
-        : {}),
+      ...workspaceFilter,
     },
     orderBy: { displayName: "asc" },
     include: { adapter: true },
   });
 }
 
-export async function listAdaptersByOwner(ownerKey: string) {
+export async function listAdaptersByWorkspace(workspaceId: string) {
   return prisma.adapter.findMany({
-    where: { ownerKey },
+    where: { workspaceId },
     orderBy: { createdAt: "asc" },
     include: { sources: true },
   });

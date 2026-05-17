@@ -8,9 +8,8 @@ const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
-  title: "Indox — search every source your agent touches",
-  description:
-    "Open-source search infrastructure for AI agents. Self-hosted, multi-source, every result cites its source.",
+  title: "Indox.",
+  description: "Multi-source search infrastructure",
 };
 
 export default function RootLayout({

@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { openai, createOpenAI } from "@ai-sdk/openai";
 import {
   streamText,
   convertToModelMessages,
@@ -15,9 +15,12 @@ import {
   listSources,
   logger,
   appendMessage,
+  getWorkspaceBySlug,
+  checkAndIncrementWorkspaceUsage,
+  type AllowedModel,
 } from "@indox/core";
 import { chatRatelimit, rateLimitKey, ipFromRequest } from "@/lib/ratelimit";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace, UnauthorizedError } from "@/lib/session";
 import { isSameOrigin, csrfReject } from "@/lib/csrf";
 
 // Resolve a list of user-friendly source identifiers (display name, external
@@ -74,32 +77,123 @@ function stripOrphanedToolCalls(messages: ModelMessage[]): ModelMessage[] {
   return out;
 }
 
+// Resolved context for the chat invocation. Either authenticated (existing
+// flow with conversation persistence) or public (workspaceSlug, no auth,
+// ephemeral, BYO-key or platform-key with strict ceilings).
+type ChatContext =
+  | {
+      mode: "authed";
+      workspaceId: string;
+      model: AllowedModel | string;
+      openaiApiKey: string | null; // null = platform default
+      conversationId: string | null;
+      persistScope: { workspaceId: string; userId: string };
+      rateLimitKey: string;
+    }
+  | {
+      mode: "public";
+      workspaceId: string;
+      model: AllowedModel | string;
+      openaiApiKey: string | null;
+      conversationId: null;
+      persistScope: null;
+      rateLimitKey: string;
+    };
+
 export async function POST(req: Request) {
   if (!isSameOrigin(req)) return csrfReject();
-
-  const ownerKey = await requireOwnerKey();
-  const key = rateLimitKey(req, ownerKey);
-  const { success } = await chatRatelimit.limit(key);
-  if (!success) {
-    logger.warn("chat", `rate limit hit for ${key}`);
-    return new Response("Too many requests", { status: 429 });
-  }
 
   const body = (await req.json()) as {
     messages: UIMessage[];
     sourceIds?: string[];
     conversationId?: string;
+    // When set, this is a public-chat call. Skips auth, scopes to the
+    // public workspace, and never persists messages.
+    workspaceSlug?: string;
   };
-  const { messages, conversationId } = body;
   const ip = ipFromRequest(req);
-  logger.info("chat", `request from ${key} (${messages.length} messages)`);
 
-  // Persist the user's latest message before kicking off the model. We do
-  // this opportunistically — a write failure shouldn't block the response,
-  // since the stream itself is what the user is waiting for.
+  // ─── Resolve context: public vs authed ─────────────────────────────────
+  let ctx: ChatContext;
+  if (body.workspaceSlug) {
+    const ws = await getWorkspaceBySlug(body.workspaceSlug);
+    // 404 (not 403) when not public — don't leak the existence of private
+    // workspaces to scrapers iterating slugs.
+    if (!ws || !ws.isPublic) {
+      return new Response("Not found", { status: 404 });
+    }
+    const decision = await checkAndIncrementWorkspaceUsage({
+      workspaceId: ws.id,
+      ip,
+      workspaceDailyLimit: ws.dailyCallLimit,
+    });
+    if (!decision.ok) {
+      const message =
+        decision.reason === "workspace_quota"
+          ? `This workspace has reached today's chat limit (${decision.limit} calls). Try again tomorrow.`
+          : `You've hit today's per-visitor limit on this workspace (${decision.limit} calls). Try again tomorrow.`;
+      return new Response(message, { status: 429 });
+    }
+    ctx = {
+      mode: "public",
+      workspaceId: ws.id,
+      model: ws.model,
+      openaiApiKey: ws.openaiApiKey,
+      conversationId: null,
+      persistScope: null,
+      rateLimitKey: `pub:${ws.id}:${ip}`,
+    };
+  } else {
+    let resolved: Awaited<ReturnType<typeof requireWorkspace>>;
+    try {
+      resolved = await requireWorkspace();
+    } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      throw err;
+    }
+    const { user, workspace } = resolved;
+    const settings = await prisma.workspace.findUnique({
+      where: { id: workspace.id },
+      select: { model: true, openaiApiKeyEncrypted: true },
+    });
+    const k = rateLimitKey(req, user.id);
+    const { success } = await chatRatelimit.limit(k);
+    if (!success) {
+      logger.warn("chat", `rate limit hit for ${k}`);
+      return new Response("Too many requests", { status: 429 });
+    }
+    // Private workspaces always run on the platform key for now — BYO is a
+    // public-chat optimisation. Owner's UI just nudges them to set the key
+    // before going public.
+    ctx = {
+      mode: "authed",
+      workspaceId: workspace.id,
+      model: settings?.model ?? "gpt-4o-mini",
+      openaiApiKey: null,
+      conversationId: body.conversationId ?? null,
+      persistScope: { workspaceId: workspace.id, userId: user.id },
+      rateLimitKey: k,
+    };
+  }
+
+  const { messages, conversationId } = body;
+  logger.info(
+    "chat",
+    `request ${ctx.mode} ws=${ctx.workspaceId} (${messages.length} messages)`,
+  );
+
+  // Persist the user's latest message (authed flow only). Public chats are
+  // ephemeral by design — visitors get the answer in-page, no history.
   const latest = messages[messages.length - 1];
-  if (conversationId && latest && latest.role === "user") {
-    appendMessage(conversationId, ownerKey, {
+  if (
+    ctx.persistScope &&
+    conversationId &&
+    latest &&
+    latest.role === "user"
+  ) {
+    appendMessage(conversationId, ctx.persistScope, {
       id: latest.id,
       role: latest.role,
       parts: latest.parts,
@@ -116,7 +210,10 @@ export async function POST(req: Request) {
     create: { ip, date: today, queryCount: 1 },
   }).catch((err) => logger.warn("chat", `usage log write failed: ${err}`));
 
-  const sourcesSnapshot = await listSources({ readyOnly: true, ownerKey });
+  const sourcesSnapshot = await listSources({
+    readyOnly: true,
+    workspaceId: ctx.workspaceId,
+  });
   const sourcesList = sourcesSnapshot.map((s) => ({
     id: s.id,
     displayName: s.displayName,
@@ -235,8 +332,14 @@ The user pinned these sources for this turn: ${pinnedNames.join(", ")}.
 Every searchCode call is automatically restricted to them — you do not need to (and should not) pass \`sources\` yourself. Answer only from results returned in this scope; if the answer isn't in there, say so.`
     : "";
 
+  // Pick the OpenAI provider: BYO key for public workspaces that set one,
+  // otherwise the platform default (env-resolved).
+  const provider = ctx.openaiApiKey
+    ? createOpenAI({ apiKey: ctx.openaiApiKey })
+    : openai;
+
   const result = streamText({
-    model: openai("gpt-4o-mini"),
+    model: provider(ctx.model),
     system: `You are a helpful assistant answering questions about the user's indexed sources (code repositories and documentation).
 
 INDEXED SOURCES AVAILABLE TO YOU:
@@ -274,6 +377,7 @@ Be concise.`,
     stopWhen: stepCountIs(8),
   });
 
+  const persistScope = ctx.persistScope;
   return result.toUIMessageStreamResponse({
     // Assign a stable id to the assistant message so the streamed message in
     // the browser matches the row we persist — otherwise reload would mint a
@@ -282,10 +386,10 @@ Be concise.`,
     // Persist the fully-assembled assistant message after the stream
     // completes. `responseMessage` is the final UIMessage with all parts
     // (text + tool calls + results) so reload reconstructs the exact chat
-    // the user saw.
+    // the user saw. Public/ephemeral chats skip this.
     onFinish: ({ responseMessage }) => {
-      if (!conversationId) return;
-      appendMessage(conversationId, ownerKey, {
+      if (!persistScope || !conversationId) return;
+      appendMessage(conversationId, persistScope, {
         id: responseMessage.id,
         role: responseMessage.role,
         parts: responseMessage.parts,

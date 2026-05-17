@@ -8,7 +8,7 @@ import {
   decryptToken,
   logger,
 } from "@indox/core";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 import { isSameOrigin, csrfReject } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> },
 ) {
   if (!isSameOrigin(req)) return csrfReject();
-  const ownerKey = await requireOwnerKey();
+  const { workspace } = await requireWorkspace();
   const { id } = await ctx.params;
   const body = await req.json().catch(() => null);
   const parsed = addSchema.safeParse(body);
@@ -35,7 +35,7 @@ export async function POST(
     );
   }
 
-  const adapter = await prisma.adapter.findFirst({ where: { id, ownerKey } });
+  const adapter = await prisma.adapter.findFirst({ where: { id, workspaceId: workspace.id } });
   if (!adapter) return NextResponse.json({ error: "adapter not found" }, { status: 404 });
   if (adapter.kind !== "github") {
     return NextResponse.json({ error: `unsupported kind: ${adapter.kind}` }, { status: 400 });

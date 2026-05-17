@@ -39,10 +39,23 @@ export default async function searchCode({
   const auth = await authenticate();
   if (isAuthFailure(auth)) return auth;
 
-  // Owner-scoped search: pull this user's ready sources, then constrain the
-  // hybrid search to those ids. Without this filter we'd surface every
-  // user's indexed content to whoever has the URL.
-  const sources = await listSources({ readyOnly: true, ownerKey: auth.userId });
+  // Workspace-scoped search: the token resolves to a set of accessible
+  // workspaces; pull every ready source within them. Without this filter
+  // we'd surface other users' indexed content to whoever has the URL.
+  if (auth.workspaceIds.length === 0) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: "This token has no accessible workspaces. Create one in the indox dashboard, or rotate your token.",
+        },
+      ],
+    };
+  }
+  const sources = await listSources({
+    readyOnly: true,
+    workspaceIds: auth.workspaceIds,
+  });
   if (sources.length === 0) {
     return {
       content: [

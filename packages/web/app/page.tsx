@@ -1,51 +1,52 @@
+import Link from "next/link";
+import type { Route } from "next";
 import { Nav } from "@/components/landing/Nav";
 import { Reveal } from "@/components/landing/Reveal";
 import { CodeBlock, C } from "@/components/landing/CodeBlock";
 import { Diagram } from "@/components/landing/Diagram";
-import { SearchDemo } from "@/components/landing/SearchDemo";
 import { FooterThemeSwitch } from "@/components/landing/FooterThemeSwitch";
 
 const GITHUB_URL = "https://github.com/dusanmarsa/indox";
 
 const FEATURES = [
   {
-    name: "Incremental indexing",
-    body: "Add a source. Remove a source. The index updates. No full rebuild.",
-  },
-  {
     name: "Hybrid retrieval",
-    body: "Vector similarity and BM25, fused with reciprocal rank fusion. The right chunks come back without per-query tuning.",
+    body: "Vector similarity and BM25, fused with reciprocal rank fusion. Catches semantic paraphrases and exact identifier matches at once.",
   },
   {
     name: "Pinned citations",
-    body: "Every result carries a source reference and line range. Your agent quotes the truth, not a guess.",
+    body: "Every result carries a SHA-pinned blob URL with the line range. Your agent quotes the truth, not a guess that drifts when main moves.",
   },
   {
-    name: "Multi-source",
-    body: "Code repos, docs, relational databases, object storage, local files. One query covers all of them.",
+    name: "MCP-native",
+    body: "Built-in MCP server over HTTP and stdio. Cursor, Claude, Windsurf, Zed — anything that speaks Model Context Protocol works out of the box.",
   },
   {
-    name: "Fast retrieval",
-    body: "Postgres + pgvector with HNSW. Latency you can measure on your own hardware, not feelings.",
+    name: "Per-user scoping",
+    body: "Each user only sees their own indexed sources. Bearer tokens for agents, session cookies for the dashboard, owner-checked at every query.",
+  },
+  {
+    name: "Incremental indexing",
+    body: "Add or remove a source from the dashboard. Just that source re-indexes — no full rebuild, no waiting for everything else.",
   },
   {
     name: "No telemetry",
-    body: "What your agents search stays with you. No callbacks home, no analytics, no surprises.",
+    body: "What your agents search stays in your database. No callbacks home, no analytics SDK, no usage pings.",
   },
 ];
 
 export default function Home() {
   return (
-    <div className="mx-auto container px-10" id="top">
+    <div className="mx-auto container px-8" id="top">
       <Nav />
-      <header className="flex min-h-[60vh] flex-col justify-center">
+      <header className="flex min-h-[60vh] flex-col justify-center py-30">
         <Reveal>
           <div className="mb-10 flex items-center gap-3.5 font-mono text-[12px] text-[var(--indox-muted)]">
             <span
               className="block h-px w-6 bg-[var(--indox-dim)]"
               aria-hidden
             />
-            v0.1.0 — MIT License — open source
+            v0.1.0 (beta)
           </div>
 
           <h1
@@ -62,18 +63,19 @@ export default function Home() {
           </h1>
 
           <p className="mb-[52px] max-w-[530px] text-[17px] leading-[1.65] text-[var(--indox-muted)]">
-            Open-source search infrastructure for AI agents. Self-hosted.
-            Multi-source. Every result cites the file, the line, the commit.
+            Self-hostable search infrastructure for AI agents. Indexes your
+            code, runs hybrid retrieval, and serves the results over MCP with
+            SHA-pinned citations.
           </p>
 
           <div className="flex items-center gap-8">
-            <a
-              href="#how"
+            <Link
+              href={"/login" as Route}
               className="border-b pb-0.5 text-[14px] text-[var(--indox-text)] transition-colors hover:text-[var(--indox-accent)]"
               style={{ borderColor: "var(--indox-accent)" }}
             >
-              → Read the docs
-            </a>
+              → Try the hosted version
+            </Link>
             <a
               href={GITHUB_URL}
               target="_blank"
@@ -88,91 +90,46 @@ export default function Home() {
 
       <Divider />
 
-      {/* ── Getting started ── two-column with prose + two terminal artifacts. */}
+      {/* ── Three surfaces — the actual product. ── */}
       <Section>
         <Reveal>
-          <SectionLabel>Getting started</SectionLabel>
-          <SectionTitle>Start in one command<span className="text-(--indox-accent)">.</span></SectionTitle>
+          <SectionLabel>What you get</SectionLabel>
+          <SectionTitle>Three ways in, one index<span className="text-(--indox-accent)">.</span></SectionTitle>
           <SectionPara>
-            Point Indox at your sources in a yaml config. It connects, indexes,
-            and stays in sync. Add a source — it indexes. Remove one — it&apos;s
-            gone. No full rebuild.
-          </SectionPara>
-          <SectionPara>
-            Query over HTTP from any language. A single POST request. Results
-            come back with a source reference, a relevance score, and a chunk ID
-            you can use for follow-up retrieval.
+            Configure sources once. Your agents and your team query the same
+            corpus through whichever surface fits.
           </SectionPara>
         </Reveal>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Reveal delay={80}>
-            <CodeBlock label="$ indox serve">
-              <C.Dim>$ </C.Dim>indox serve{"\n\n"}
-              {"  "}
-              <C.Dim>▸</C.Dim>
-              {"  "}
-              <C.Muted>docs/</C.Muted>
-              {"          2,048 chunks   "}
-              <C.Ok>✓</C.Ok>
-              {"\n"}
-              {"  "}
-              <C.Dim>▸</C.Dim>
-              {"  "}
-              <C.Muted>postgres://db</C.Muted>
-              {"  4,921 rows     "}
-              <C.Ok>✓</C.Ok>
-              {"\n"}
-              {"  "}
-              <C.Dim>▸</C.Dim>
-              {"  "}
-              <C.Muted>s3://bucket/</C.Muted>
-              {"   1,103 objects  "}
-              <C.Ok>✓</C.Ok>
-              {"\n\n"}
-              {"  "}
-              <C.Ok>ready</C.Ok>
-              {" :8080  ·  8,072 indexed"}
-            </CodeBlock>
-          </Reveal>
-          <Reveal delay={160}>
-            <div>
-              <CodeBlock label="POST /search">
-                <C.Dim>$ </C.Dim>curl localhost:8080/search \{"\n"}
-                {"     -d '"}
-                <C.Muted>{`{"q":"configure rate limiting"}`}</C.Muted>
-                {"'\n\n"}
-                {"{\n"}
-                {"  "}
-                <C.Muted>&quot;latency_ms&quot;</C.Muted>: 31,{"\n"}
-                {"  "}
-                <C.Muted>&quot;results&quot;</C.Muted>: [{"{\n"}
-                {"    "}
-                <C.Muted>&quot;source&quot;</C.Muted>:{" "}
-                <C.Accent>&quot;docs/config.md#rate-limits&quot;</C.Accent>,
-                {"\n"}
-                {"    "}
-                <C.Muted>&quot;score&quot;</C.Muted>: 0.94,{"\n"}
-                {"    "}
-                <C.Muted>&quot;content&quot;</C.Muted>: &quot;Rate limits are
-                set per-route…&quot;{"\n"}
-                {"  }]\n}"}
-              </CodeBlock>
-            </div>
-          </Reveal>
+        <div className="grid grid-cols-1 gap-px md:grid-cols-3 mt-12 border border-[var(--indox-border)] bg-[var(--indox-border)]">
+          <Surface
+            label="Dashboard"
+            title="Manage what's indexed."
+            body="Sign in, drop in a GitHub PAT, pick the repos you want indexed. Indexing status, chunk counts, and re-sync controls in one place."
+          />
+          <Surface
+            label="Chat"
+            title="Ask the indexed corpus."
+            body="A web chat backed by the real retrieval pipeline. Pinned source URLs on every answer. Conversations persist per user."
+          />
+          <Surface
+            label="MCP server"
+            title="Plug in any agent."
+            body="HTTP and stdio transports. Per-user bearer tokens. Cursor, Claude Code, Claude Desktop, Windsurf, Zed — all work without custom glue."
+          />
         </div>
       </Section>
 
       <Divider />
 
-      {/* ── How it works ── headline + whiteboard diagram. */}
+      {/* ── How it works ── headline + diagram. ── */}
       <Section id="how">
         <Reveal>
           <SectionLabel>How it works</SectionLabel>
           <SectionTitle>One index in front of everything.</SectionTitle>
           <p className="mb-16 text-balance text-md leading-relaxed text-muted-foreground max-w-prose">
-            Your agent sends one request. Indox searches across every configured
-            source and returns ranked results with citations. No per-source
-            integration code in your agent.
+            Your agent sends one request. Indox runs hybrid retrieval across
+            every configured source and returns ranked, cited chunks. No
+            per-source integration code in your agent.
           </p>
         </Reveal>
         <Reveal delay={80}>
@@ -184,7 +141,7 @@ export default function Home() {
 
       <Divider />
 
-      {/* ── What it does ── 2×3 grid of features with hairline dividers (no cards). */}
+      {/* ── Features ── 2×3 grid of features with hairline dividers. ── */}
       <Section id="features">
         <Reveal>
           <SectionLabel>What it does</SectionLabel>
@@ -205,57 +162,55 @@ export default function Home() {
 
       <Divider />
 
-      {/* ── Self-host ── prose + docker-compose + indox.yaml. */}
+      {/* ── Self-host ── real clone-and-run, no fictional CLI. ── */}
       <Section id="deploy">
         <TwoCol>
           <Reveal>
             <SectionLabel>Self-host</SectionLabel>
-            <SectionTitle>One command to run.</SectionTitle>
+            <SectionTitle>Clone it, run it, own the data.</SectionTitle>
             <SectionPara>
-              Docker image, single binary, or from source. Configuration lives
-              in one yaml file. No external services required to get started.
+              Bun monorepo with three services: web, worker, and MCP server.
+              Postgres with pgvector and pg_trgm handles storage. Each service
+              ships a Railway config you can point at any other container host.
             </SectionPara>
             <SectionPara>
-              Run it next to your agent on the same machine. Run it on-prem. The
-              data never leaves your infrastructure.
+              No SaaS dependency in the data path. Embeddings hit OpenAI for
+              now; swap in a local model when that ships. Adapter credentials
+              are AES-256-GCM encrypted at rest.
             </SectionPara>
+            <div className="mt-6">
+              <a
+                href={GITHUB_URL + "#quick-start-local-dev"}
+                target="_blank"
+                rel="noreferrer"
+                className="border-b pb-0.5 text-[14px] text-[var(--indox-text)] transition-colors hover:text-[var(--indox-accent)]"
+                style={{ borderColor: "var(--indox-accent)" }}
+              >
+                → Full setup in the README
+              </a>
+            </div>
           </Reveal>
-          <div>
+          <div className="min-w-0">
             <Reveal delay={80}>
-              <CodeBlock label="docker-compose.yml">
-                services:{"\n"}
-                {"  "}
-                <C.Accent>indox</C.Accent>:{"\n"}
-                {"    image: "}
-                <C.Muted>ghcr.io/dusanmarsa/indox:latest</C.Muted>
-                {"\n"}
-                {'    ports: ["8080:8080"]\n'}
-                {"    volumes:\n"}
-                {"      - ./indox.yaml:/etc/indox/config.yaml\n"}
-                {"      - ./data:/var/indox/data"}
+              <CodeBlock label="$ clone and boot">
+                <C.Dim>$ </C.Dim>git clone https://github.com/dusanmarsa/indox.git{"\n"}
+                <C.Dim>$ </C.Dim>cd indox && bun install{"\n"}
+                <C.Dim>$ </C.Dim>cp .env.example .env  <C.Muted># fill in DATABASE_URL, OPENAI_API_KEY, …</C.Muted>{"\n"}
+                <C.Dim>$ </C.Dim>bun run db:migrate{"\n"}
+                <C.Dim>$ </C.Dim>bun run dev{"\n\n"}
+                {"  "}<C.Ok>▸</C.Ok>{" web    "}<C.Muted>http://localhost:3000</C.Muted>{"\n"}
+                {"  "}<C.Ok>▸</C.Ok>{" worker "}<C.Muted>watching pg-boss queue</C.Muted>{"\n"}
               </CodeBlock>
             </Reveal>
             <Reveal delay={160}>
               <div className="mt-2">
-                <CodeBlock label="indox.yaml">
-                  <C.Accent>sources</C.Accent>:{"\n"}
-                  {"  - type: "}
-                  <C.Muted>github</C.Muted>
-                  {"\n"}
-                  {"    repos: ["}
-                  <C.Muted>your-org/*</C.Muted>
-                  {"]\n"}
-                  {"  - type: "}
-                  <C.Muted>filesystem</C.Muted>
-                  {"\n"}
-                  {"    path: "}
-                  <C.Muted>./docs</C.Muted>
-                  {"\n"}
-                  {"  - type: "}
-                  <C.Muted>postgres</C.Muted>
-                  {"\n"}
-                  {"    dsn:  "}
-                  <C.Muted>${`{POSTGRES_DSN}`}</C.Muted>
+                <CodeBlock label="agent config">
+                  <C.Accent>mcpServers</C.Accent>: {"{\n"}
+                  {"  "}<C.Accent>indox</C.Accent>: {"{\n"}
+                  {"    "}<C.Muted>&quot;url&quot;</C.Muted>:{" "}
+                  <C.Muted>&quot;https://your-host/mcp?token=mcp_...&quot;</C.Muted>{"\n"}
+                  {"  }\n"}
+                  {"}"}
                 </CodeBlock>
               </div>
             </Reveal>
@@ -265,16 +220,22 @@ export default function Home() {
 
       <Divider />
 
-      {/* ── Demo ── live, hits the real engine via /[user] routes. */}
+      {/* ── CTA ── ── */}
       <Section id="demo">
         <Reveal>
           <SectionLabel>Try it</SectionLabel>
-          <SectionTitle>Search a real repo, right now.</SectionTitle>
+          <SectionTitle>Spin up the hosted version.</SectionTitle>
           <p className="mb-8 max-w-[560px] text-[15px] leading-[1.75] text-[var(--indox-muted)]">
-            No mocked demo — this drops you into a chat against the live Indox
-            engine. Same retrieval the MCP server uses. Same pinned citations.
+            Sign up, add a GitHub PAT, pick a repo. You&apos;re chatting against
+            your own indexed code in under a minute — and the MCP endpoint is
+            live the moment the index finishes.
           </p>
-          <SearchDemo />
+          <Link
+            href={"/login" as Route}
+            className="inline-block border border-[var(--indox-border)] bg-[var(--indox-surface)] px-5 py-2.5 font-mono text-[13px] text-[var(--indox-text)] transition-colors hover:bg-[var(--indox-surface)]/70"
+          >
+            Sign up →
+          </Link>
         </Reveal>
       </Section>
 
@@ -286,12 +247,12 @@ export default function Home() {
           </span>
           <div className="flex flex-wrap items-center gap-6">
             <a
-              href={GITHUB_URL}
+              href={GITHUB_URL + "/blob/master/LICENSE"}
               target="_blank"
               rel="noreferrer"
               className="text-[13px] text-[var(--indox-dim)] transition-colors hover:text-[var(--indox-muted)]"
             >
-              MIT License
+              FSL-1.1-Apache-2.0
             </a>
             <a
               href={GITHUB_URL}
@@ -310,7 +271,6 @@ export default function Home() {
 }
 
 // ── Section primitives ─────────────────────────────────────────────────────
-// Kept inline (rather than another file) so this whole page reads top-to-bottom.
 
 function Section({ children, id }: { children: React.ReactNode; id?: string }) {
   return (
@@ -358,6 +318,33 @@ function SectionPara({ children }: { children: React.ReactNode }) {
   );
 }
 
+function Surface({
+  label,
+  title,
+  body,
+}: {
+  label: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="bg-[var(--background)] p-8">
+      <p
+        className="mb-4 font-mono text-[10.5px] uppercase text-[var(--indox-dim)]"
+        style={{ letterSpacing: "0.12em" }}
+      >
+        {label}
+      </p>
+      <h3 className="mb-3 text-[18px] font-semibold tracking-[-0.015em]">
+        {title}
+      </h3>
+      <p className="text-[13.5px] leading-[1.7] text-[var(--indox-muted)]">
+        {body}
+      </p>
+    </div>
+  );
+}
+
 function FeatureCell({
   name,
   body,
@@ -369,10 +356,7 @@ function FeatureCell({
   index: number;
   total: number;
 }) {
-  // Hairline grid: every cell gets a bottom border *except* the bottom two
-  // (last row). Odd cells get a right border (the column divider). On mobile
-  // the right border collapses since we drop to a single column.
-  const isOdd = index % 2 === 0; // 0-indexed: cells 0, 2, 4 are "left"
+  const isOdd = index % 2 === 0;
   const isLastRow = index >= total - 2;
   return (
     <div
@@ -397,5 +381,5 @@ function FeatureCell({
 }
 
 function Divider() {
-  return <hr className="border-t border-[var(--indox-border)]" />;
+  return <hr className="border-t border-(--indox-border)/50" />;
 }

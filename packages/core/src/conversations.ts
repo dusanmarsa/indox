@@ -1,6 +1,6 @@
-// Conversation persistence. `ownerKey` is the authenticated User.id;
-// every public function takes one and silently returns null for non-matches
-// so a leaked conversation id can't be used to read or mutate history.
+// Conversation persistence. Scoped to (workspaceId, userId) so a leaked
+// conversation id can't be read across workspaces, and — once shared
+// workspaces ship — can't be read across members of the same workspace.
 
 import prisma from "./db";
 
@@ -24,22 +24,27 @@ export type ConversationSummary = {
   updatedAt: Date;
 };
 
+export type ConversationScope = {
+  workspaceId: string;
+  userId: string;
+};
+
 export async function createConversation(
-  ownerKey: string,
+  scope: ConversationScope,
   title: string | null = null,
 ): Promise<ConversationSummary> {
   const row = await prisma.conversation.create({
-    data: { ownerKey, title },
+    data: { workspaceId: scope.workspaceId, userId: scope.userId, title },
   });
   return summary(row);
 }
 
 export async function listConversations(
-  ownerKey: string,
+  scope: ConversationScope,
   limit = 100,
 ): Promise<ConversationSummary[]> {
   const rows = await prisma.conversation.findMany({
-    where: { ownerKey },
+    where: { workspaceId: scope.workspaceId, userId: scope.userId },
     // `id` tiebreaker stabilises order when two rows share updatedAt;
     // without it the sidebar shuffles between reloads.
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
@@ -50,10 +55,10 @@ export async function listConversations(
 
 export async function getConversation(
   id: string,
-  ownerKey: string,
+  scope: ConversationScope,
 ): Promise<{ summary: ConversationSummary; messages: PersistedMessage[] } | null> {
   const row = await prisma.conversation.findFirst({
-    where: { id, ownerKey },
+    where: { id, workspaceId: scope.workspaceId, userId: scope.userId },
     include: {
       messages: { orderBy: { createdAt: "asc" } },
     },
@@ -70,8 +75,13 @@ export async function getConversation(
   };
 }
 
-export async function deleteConversation(id: string, ownerKey: string): Promise<boolean> {
-  const r = await prisma.conversation.deleteMany({ where: { id, ownerKey } });
+export async function deleteConversation(
+  id: string,
+  scope: ConversationScope,
+): Promise<boolean> {
+  const r = await prisma.conversation.deleteMany({
+    where: { id, workspaceId: scope.workspaceId, userId: scope.userId },
+  });
   return r.count > 0;
 }
 
@@ -79,7 +89,7 @@ export async function deleteConversation(id: string, ownerKey: string): Promise<
 // derive a sidebar title from its text.
 export async function appendMessage(
   conversationId: string,
-  ownerKey: string,
+  scope: ConversationScope,
   message: { id?: string; role: string; parts: unknown },
 ): Promise<PersistedMessage | null> {
   const serialised = JSON.stringify(message.parts ?? null);
@@ -93,7 +103,7 @@ export async function appendMessage(
   // updatedAt bump fails.
   return prisma.$transaction(async (tx) => {
     const conv = await tx.conversation.findFirst({
-      where: { id: conversationId, ownerKey },
+      where: { id: conversationId, workspaceId: scope.workspaceId, userId: scope.userId },
       select: { id: true, title: true },
     });
     if (!conv) return null;

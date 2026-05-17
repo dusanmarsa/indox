@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, listGithubRepos, decryptToken } from "@indox/core";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,7 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const ownerKey = await requireOwnerKey();
+  const { workspace } = await requireWorkspace();
   const { id } = await ctx.params;
   const url = new URL(req.url);
   const mode = url.searchParams.get("mode") as "user" | "org" | null;
@@ -23,7 +23,7 @@ export async function GET(
   }
 
   const adapter = await prisma.adapter.findFirst({
-    where: { id, ownerKey },
+    where: { id, workspaceId: workspace.id },
     include: { sources: { select: { externalId: true } } },
   });
   if (!adapter) return NextResponse.json({ error: "adapter not found" }, { status: 404 });
