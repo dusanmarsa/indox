@@ -62,7 +62,7 @@ model Embedding {
   sourceId     String                       @map("source_id")
   chunkText    String                       @map("chunk_text")
   chunkUrl     String?                      @map("chunk_url")
-  embedding    Unsupported("vector(1536)")?
+  embedding    Unsupported("halfvec(3072)")?
   // Generated column (STORED) — populated by Postgres from chunk_text.
   // Queried via raw SQL for hybrid retrieval; never written from app code.
   chunkTextTsv Unsupported("tsvector")?     @map("chunk_text_tsv")
@@ -77,19 +77,25 @@ model Embedding {
 // these are always the workspace owner, but the userId column is here from
 // the start so per-member private history works without a migration when
 // Tier 2 (shared workspaces) ships.
+//
+// Anonymous embed sessions (public /w/<slug> chat) set anonSessionId instead
+// of userId. Both are nullable so either variant can exist; exactly one of
+// the two is always present on a real row.
 model Conversation {
-  id          String   @id @default(cuid())
-  workspaceId String   @map("workspace_id")
-  userId      String   @map("user_id")
-  title       String?
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(cuid())
+  workspaceId   String   @map("workspace_id")
+  userId        String?  @map("user_id")          // null for anonymous embed sessions
+  anonSessionId String?  @map("anon_session_id")  // UUID minted client-side for embed visitors
+  title         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   workspace Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  ConversationMessage[]
 
   @@index([workspaceId, userId, updatedAt])
+  @@index([workspaceId, anonSessionId, updatedAt])
   @@map("conversations")
 }
 

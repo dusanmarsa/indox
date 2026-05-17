@@ -15,16 +15,16 @@ Next.js 16 app (App Router, React 19). Four surfaces in one package:
 
 ## Tech stack
 
-| Concern | Choice |
-|---------|--------|
-| Framework | Next.js 16, App Router, React 19 |
-| UI | shadcn/ui (`radix-luma`), Tailwind v4 (CSS variables in `app/globals.css`), lucide-react, motion |
-| Markdown | Streamdown + plugins (math, mermaid, CJK) |
-| AI SDK | `ai`, `@ai-sdk/openai`, `@ai-sdk/react` |
-| Database | `@indox/core` (Prisma + pg adapter) — never instantiate a second client |
-| Auth | [better-auth](https://better-auth.com) — email/password |
-| Rate limiting | Upstash Redis (no-op when env unset) |
-| GitHub API | `@octokit/rest` |
+| Concern       | Choice                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| Framework     | Next.js 16, App Router, React 19                                                                 |
+| UI            | shadcn/ui (`radix-luma`), Tailwind v4 (CSS variables in `app/globals.css`), lucide-react, motion |
+| Markdown      | Streamdown + plugins (math, mermaid, CJK)                                                        |
+| AI SDK        | `ai`, `@ai-sdk/openai`, `@ai-sdk/react`                                                          |
+| Database      | `@indox/core` (Prisma + pg adapter) — never instantiate a second client                          |
+| Auth          | [better-auth](https://better-auth.com) — email/password                                          |
+| Rate limiting | Upstash Redis (no-op when env unset)                                                             |
+| GitHub API    | `@octokit/rest`                                                                                  |
 
 ---
 
@@ -92,6 +92,7 @@ import { requireOwnerKey } from "@/lib/session";
 ## Server vs client components
 
 Default to **Server Components**. Add `"use client"` only for:
+
 - React state / effects
 - Browser APIs
 - AI SDK's `useChat`
@@ -108,6 +109,7 @@ Data fetching and Prisma queries live in Server Components or route handlers.
 
 `lib/session.ts` is the only place handlers/components should reach for the
 current user:
+
 - `getUser()` — nullable
 - `requireUser()` / `requireOwnerKey()` — throws `UnauthorizedError`
 - `getOwnerKey()` — nullable, same value as `requireOwnerKey()`
@@ -134,6 +136,7 @@ Extra trusted origins go in `CSRF_ALLOWED_ORIGINS` (comma-separated).
 ## Chat route — invariants to preserve
 
 `app/api/chat/route.ts`:
+
 - **CSRF check** runs first.
 - **Rate limit** keyed on the session id (`rateLimitKey(req, ownerKey)`).
 - **`stripOrphanedToolCalls`** must run before `convertToModelMessages` — OpenAI

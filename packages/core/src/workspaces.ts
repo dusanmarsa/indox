@@ -28,7 +28,7 @@ export async function listUserWorkspaces(userId: string): Promise<WorkspaceSumma
 // silently fall back to the first owned workspace.
 export async function resolveActiveWorkspace(
   userId: string,
-  activeId?: string | null,
+  activeId?: string | null
 ): Promise<WorkspaceSummary> {
   if (activeId) {
     const owned = await prisma.workspace.findFirst({
@@ -66,7 +66,7 @@ export async function ensureDefaultWorkspace(userId: string): Promise<WorkspaceS
 // Owner-check: returns the workspace if the user owns it, null otherwise.
 export async function getOwnedWorkspace(
   workspaceId: string,
-  userId: string,
+  userId: string
 ): Promise<WorkspaceSummary | null> {
   return prisma.workspace.findFirst({
     where: { id: workspaceId, ownerId: userId },
@@ -112,7 +112,7 @@ export type DeleteWorkspaceResult =
 // last workspace — they'd be left with nowhere to add new adapters.
 export async function deleteWorkspace(
   workspaceId: string,
-  userId: string,
+  userId: string
 ): Promise<DeleteWorkspaceResult> {
   const owned = await prisma.workspace.findFirst({
     where: { id: workspaceId, ownerId: userId },
@@ -183,13 +183,15 @@ export async function copyAdapterToWorkspace(opts: {
 // leading/trailing hyphens. Result is *not* guaranteed unique — callers
 // pass it through `uniqueSlug` to disambiguate.
 export function slugify(input: string): string {
-  return input
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48) || "workspace";
+  return (
+    input
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "workspace"
+  );
 }
 
 // Append `-2`, `-3`, … to disambiguate against existing slugs. Bounded so

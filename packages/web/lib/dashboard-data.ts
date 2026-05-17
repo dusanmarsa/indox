@@ -1,6 +1,15 @@
-import { prisma } from "@indox/core";
+import { cache } from "react";
+import { prisma, recoverStuckIndexing } from "@indox/core";
 
-function timeAgo(date: Date | null): string {
+// Best-effort sweep of orphaned "running" rows on every dashboard render.
+// `cache()` dedupes within a single request; across requests this is a cheap
+// UPDATE that hits zero rows in the common case. Errors are swallowed — we'd
+// rather render stale state than fail the dashboard.
+const sweepStuckIndexing = cache(async function sweepStuckIndexing() {
+  await recoverStuckIndexing().catch(() => {});
+});
+
+export function timeAgo(date: Date | null): string {
   if (!date) return "never";
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
   if (seconds < 60) return `${seconds}s ago`;
@@ -12,9 +21,10 @@ function timeAgo(date: Date | null): string {
   return `${days}d ago`;
 }
 
-function sourceStatus(indexStatus: string | null): "ok" | "warn" | "idle" {
-  if (indexStatus === "ready") return "ok";
-  if (indexStatus === "failed") return "warn";
+function sourceStatus(indexStatus: string | null): SourceStatus {
+  if (indexStatus === "ready") return "ready";
+  if (indexStatus === "running") return "indexing";
+  if (indexStatus === "failed") return "failed";
   return "idle";
 }
 
@@ -26,7 +36,7 @@ function estimateSize(chunkCount: number | null): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export async function getDashboardStats(workspaceId: string) {
+export const getDashboardStats = cache(async function getDashboardStats(workspaceId: string) {
   // UsageLog is still IP-keyed and global; everything else scopes by workspace.
   const workspaceSourceWhere = { adapter: { workspaceId } };
   const todayStart = new Date();
@@ -48,7 +58,9 @@ export async function getDashboardStats(workspaceId: string) {
     adapterCount,
   ] = await Promise.all([
     prisma.source.count({ where: { indexStatus: "ready", ...workspaceSourceWhere } }),
-    prisma.source.count({ where: { indexStatus: "ready", indexedAt: { lt: weekAgo }, ...workspaceSourceWhere } }),
+    prisma.source.count({
+      where: { indexStatus: "ready", indexedAt: { lt: weekAgo }, ...workspaceSourceWhere },
+    }),
     prisma.source.aggregate({
       where: { indexStatus: "ready", ...workspaceSourceWhere },
       _sum: { chunkCount: true },
@@ -74,9 +86,10 @@ export async function getDashboardStats(workspaceId: string) {
 
   const queriesToday = todayUsage._sum.queryCount ?? 0;
   const queriesYesterday = yesterdayUsage._sum.queryCount ?? 0;
-  const queryPct = queriesYesterday > 0
-    ? Math.round(((queriesToday - queriesYesterday) / queriesYesterday) * 100)
-    : null;
+  const queryPct =
+    queriesYesterday > 0
+      ? Math.round(((queriesToday - queriesYesterday) / queriesYesterday) * 100)
+      : null;
 
   const newSources = sourceCount - sourceCountWeekAgo;
 
@@ -86,7 +99,8 @@ export async function getDashboardStats(workspaceId: string) {
     repoCountDelta: newSources > 0 ? `+${newSources} this week` : "no change this week",
     repoCountUp: newSources > 0,
     totalChunks,
-    chunkDelta: chunkDelta > 0 ? `↑ ${chunkDelta.toLocaleString()} since last week` : "no new chunks",
+    chunkDelta:
+      chunkDelta > 0 ? `↑ ${chunkDelta.toLocaleString()} since last week` : "no new chunks",
     chunkDeltaUp: chunkDelta > 0,
     queriesToday,
     queryDelta:
@@ -95,7 +109,9 @@ export async function getDashboardStats(workspaceId: string) {
         : "no data yesterday",
     queryDeltaUp: queryPct !== null ? queryPct >= 0 : null,
   };
-}
+});
+
+export type SourceStatus = "ready" | "indexing" | "failed" | "idle";
 
 export type DashboardSource = {
   id: string;
@@ -105,11 +121,16 @@ export type DashboardSource = {
   chunks: number;
   size: string;
   sync: string;
-  status: "ok" | "warn" | "idle";
+  indexedAt: Date | null;
+  status: SourceStatus;
   displayName: string;
 };
 
-export async function getDashboardSources(workspaceId: string, limit?: number): Promise<DashboardSource[]> {
+export const getDashboardSources = cache(async function getDashboardSources(
+  workspaceId: string,
+  limit?: number
+): Promise<DashboardSource[]> {
+  await sweepStuckIndexing();
   const sources = await prisma.source.findMany({
     where: { adapter: { workspaceId } },
     orderBy: [{ indexStatus: "asc" }, { indexedAt: "desc" }],
@@ -125,33 +146,37 @@ export async function getDashboardSources(workspaceId: string, limit?: number): 
     chunks: s.chunkCount ?? 0,
     size: estimateSize(s.chunkCount),
     sync: timeAgo(s.indexedAt),
+    indexedAt: s.indexedAt,
     status: sourceStatus(s.indexStatus),
     displayName: s.displayName,
   }));
-}
+});
 
-export type SourceFile = { path: string; chunks: number };
+export type SourceFile = { path: string; chunks: number; url: string | null };
 
 // Pulls distinct file paths for a source from its embeddings. Uses chunk_url
-// (a SHA-pinned blob link with #L1-L10 fragment) and strips it back to a
-// repo-relative path. GitHub-only today; other adapters can override.
+// (a SHA-pinned blob link with #L1-L10 fragment), strips the fragment for the
+// deep link, and the GitHub URL prefix to derive a repo-relative path. Falls
+// back to non-GitHub adapters gracefully — `url` is non-null whenever
+// `chunk_url` was set on the embedding.
 export async function getSourceFiles(sourceId: string, workspaceId: string): Promise<SourceFile[]> {
   const ok = await prisma.source.findFirst({
     where: { id: sourceId, adapter: { workspaceId } },
     select: { id: true },
   });
   if (!ok) return [];
-  const rows = await prisma.$queryRaw<Array<{ path: string; chunks: bigint }>>`
+  const rows = await prisma.$queryRaw<Array<{ path: string; chunks: bigint; url: string | null }>>`
     SELECT
       regexp_replace(split_part(chunk_url, '#', 1), '^https?://github\.com/[^/]+/[^/]+/blob/[^/]+/', '') AS path,
-      COUNT(*) AS chunks
+      COUNT(*) AS chunks,
+      MIN(split_part(chunk_url, '#', 1)) AS url
     FROM embeddings
     WHERE source_id = ${sourceId}
       AND chunk_url IS NOT NULL
     GROUP BY path
     ORDER BY path ASC
   `;
-  return rows.map((r) => ({ path: r.path, chunks: Number(r.chunks) }));
+  return rows.map((r) => ({ path: r.path, chunks: Number(r.chunks), url: r.url }));
 }
 
 export type DashboardAdapter = {
@@ -166,7 +191,10 @@ export type DashboardAdapter = {
   readyCount: number;
 };
 
-export async function getDashboardAdapters(workspaceId: string): Promise<DashboardAdapter[]> {
+export const getDashboardAdapters = cache(async function getDashboardAdapters(
+  workspaceId: string
+): Promise<DashboardAdapter[]> {
+  await sweepStuckIndexing();
   const adapters = await prisma.adapter.findMany({
     where: { workspaceId },
     orderBy: { createdAt: "asc" },
@@ -183,7 +211,7 @@ export async function getDashboardAdapters(workspaceId: string): Promise<Dashboa
     sourceCount: a.sources.length,
     readyCount: a.sources.filter((s) => s.indexStatus === "ready").length,
   }));
-}
+});
 
 export type DashboardQuery = {
   q: string;
@@ -193,11 +221,14 @@ export type DashboardQuery = {
 
 // Recent queries used to come from cachedAnswer rows — that table is gone now.
 // Returns empty until we add a query log; the dashboard widget hides gracefully.
-export async function getRecentQueries(): Promise<DashboardQuery[]> {
+export const getRecentQueries = cache(async function getRecentQueries(): Promise<DashboardQuery[]> {
   return [];
-}
+});
 
-export async function getActivityData(): Promise<{ bars: number[]; xLabels: string[] }> {
+export const getActivityData = cache(async function getActivityData(): Promise<{
+  bars: number[];
+  xLabels: string[];
+}> {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
   thirtyDaysAgo.setHours(0, 0, 0, 0);
@@ -224,11 +255,9 @@ export async function getActivityData(): Promise<{ bars: number[]; xLabels: stri
     const d = new Date(now);
     d.setDate(d.getDate() - i * 5);
     xLabels.push(
-      i === 0
-        ? "today"
-        : d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      i === 0 ? "today" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
     );
   }
 
   return { bars, xLabels };
-}
+});

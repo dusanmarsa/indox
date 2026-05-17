@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ChatHeader, Pill } from "@indox/ui";
 import { getWorkspaceBySlug, listSources } from "@indox/core";
 import { ChatProvider } from "@/components/chat/context";
 import ChatArea from "@/components/chat/Area";
 import ChatInput from "@/components/chat/Input";
-import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -32,41 +33,48 @@ export default async function PublicWorkspaceChatPage({
 
   return (
     <ChatProvider publicWorkspaceSlug={ws.slug} initialSources={initialSources}>
-      <div className="flex min-h-screen flex-col">
-        <header className="border-b border-(--indox-border) bg-(--indox-surface)">
-          <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3">
-            <div className="min-w-0">
-              <p className="truncate font-mono text-[13px] text-foreground">
-                {ws.name}
-              </p>
-              <p className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-(--indox-dim)">
-                public chat · {initialSources.length} source
-                {initialSources.length === 1 ? "" : "s"} · powered by indox
-              </p>
+      <div className="flex h-screen min-h-0 flex-col overflow-hidden">
+        <ChatHeader
+          title={ws.name}
+          stats={
+            <div className="flex items-center gap-2">
+              <Pill tone="ok">public</Pill>
+              <span>
+                <b>{initialSources.length}</b> source
+                {initialSources.length === 1 ? "" : "s"}
+              </span>
             </div>
+          }
+          actions={
             <Link
               href="/"
-              className="font-mono text-[11px] text-(--indox-muted) transition-colors hover:text-foreground"
+              className="font-mono text-[11px] text-ink-2 transition-colors hover:text-ink"
             >
-              indox<span className="text-(--indox-accent)">.</span>
+              indox<span className="text-brand">.</span>
             </Link>
+          }
+        />
+        {initialSources.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center px-6">
+            <p className="max-w-sm text-center font-mono text-[12px] text-ink-3">
+              This workspace doesn&apos;t have any indexed sources yet. The owner needs to add at
+              least one before chat works.
+            </p>
           </div>
-        </header>
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6">
-          {initialSources.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center">
-              <p className="max-w-sm text-center font-mono text-[12px] text-(--indox-dim)">
-                This workspace doesn&apos;t have any indexed sources yet. The
-                owner needs to add at least one before chat works.
-              </p>
+        ) : (
+          <>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="mx-auto max-w-3xl px-6 py-10">
+                <ChatArea />
+              </div>
             </div>
-          ) : (
-            <>
-              <ChatArea />
-              <ChatInput />
-            </>
-          )}
-        </div>
+            <div className="shrink-0 bg-gradient-to-t from-background via-background to-transparent">
+              <div className="mx-auto max-w-3xl px-6 pt-4 pb-6">
+                <ChatInput />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </ChatProvider>
   );

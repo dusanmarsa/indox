@@ -12,16 +12,21 @@ Self-hostable, source-available ([FSL-1.1-Apache-2.0](./LICENSE)).
 
 ## What works today (v0.1)
 
-- **Indexing pipeline** — chunker, OpenAI embeddings, pgvector storage
-- **Hybrid retrieval** — vector ANN + Postgres FTS fused via reciprocal rank fusion
+- **Indexing pipeline** — shape-aware chunker (tree-sitter for code, heading
+  sections for prose), OpenAI embeddings, pgvector storage (`halfvec(3072)`
+  for full-dimension `text-embedding-3-large`)
+- **Hybrid retrieval** — vector ANN + Postgres FTS + path-token boost, fused
+  via reciprocal rank fusion
 - **SHA-pinned citations** — every chunk carries the exact blob URL + line range
-- **GitHub source connector** — index any repo your PAT can read
-- **MCP server (HTTP + stdio)** — `search_code`, `list_indexed_sources`, per-user bearer auth
+- **Source connectors** — GitHub (any repo your PAT can read) and Notion
+  (any page tree your integration can see)
+- **MCP server (HTTP + stdio)** — `search_code`, `list_indexed_sources`,
+  per-user bearer auth
 - **Web UI** — sign in, manage adapters, chat against your indexed sources
-- **Auth** — email/password via [better-auth](https://better-auth.com), optional allowlist
+- **Auth** — email/password via [better-auth](https://better-auth.com),
+  optional allowlist
 
-Connectors for GitLab, Confluence, Notion, and local filesystems are planned for
-v0.2
+Connectors for GitLab, Confluence, and local filesystems are planned for v0.2.
 
 ---
 
@@ -125,7 +130,7 @@ Full env reference: [`.env.example`](.env.example).
 
 Loose, in rough priority order. Nothing here is a promise.
 
-- More source connectors — GitLab, Notion, Confluence, local filesystem
+- More source connectors — GitLab, Confluence, local filesystem
 - A published Docker image so self-hosters don't need to clone the repo
 - Faster incremental sync (today every change re-indexes the source)
 - Better per-source permissions (today: the user who indexed it can read it)

@@ -10,10 +10,10 @@ to MCP-compatible agents over **HTTP** (per-user bearer auth) and **stdio**
 
 Configured in `xmcp.config.ts`:
 
-| Transport | Entry | Port |
-|-----------|-------|------|
-| stdio | `bun ./dist/stdio.js` | stdin/stdout |
-| HTTP | `bun ./dist/http.js`  | `POST /mcp` on `$PORT` (default 3030) |
+| Transport | Entry                 | Port                                  |
+| --------- | --------------------- | ------------------------------------- |
+| stdio     | `bun ./dist/stdio.js` | stdin/stdout                          |
+| HTTP      | `bun ./dist/http.js`  | `POST /mcp` on `$PORT` (default 3030) |
 
 A single `xmcp build` produces both. `paths.prompts` and `paths.resources` are
 disabled — only tools are active.
@@ -48,11 +48,11 @@ helpers without the owner scope from this package.
 xmcp auto-registers tools by **file-based routing** from `src/tools/`. Each
 file exports:
 
-| Export | Type | Notes |
-|--------|------|-------|
-| `schema` | `Record<string, ZodType>` | Input params |
-| `metadata` | `ToolMetadata` | `name` (snake_case), `description`, `annotations` |
-| `default` | `async function` | Handler receiving `InferSchema<typeof schema>` |
+| Export     | Type                      | Notes                                             |
+| ---------- | ------------------------- | ------------------------------------------------- |
+| `schema`   | `Record<string, ZodType>` | Input params                                      |
+| `metadata` | `ToolMetadata`            | `name` (snake_case), `description`, `annotations` |
+| `default`  | `async function`          | Handler receiving `InferSchema<typeof schema>`    |
 
 ```ts
 import { z } from "zod";
@@ -67,7 +67,12 @@ export const schema = {
 export const metadata: ToolMetadata = {
   name: "my_tool",
   description: "...",
-  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
 };
 
 export default async function myTool({ query }: InferSchema<typeof schema>) {
@@ -91,11 +96,11 @@ export default async function myTool({ query }: InferSchema<typeof schema>) {
 
 ## Environment
 
-| Variable            | Purpose |
-|---------------------|---------|
-| `DATABASE_URL`      | Prisma connection (via `@indox/core`) |
-| `OPENAI_API_KEY`    | Embeddings + optional query rewrite |
-| `ADAPTER_TOKEN_KEY` | Required by core's crypto module at import time |
+| Variable            | Purpose                                                  |
+| ------------------- | -------------------------------------------------------- |
+| `DATABASE_URL`      | Prisma connection (via `@indox/core`)                    |
+| `OPENAI_API_KEY`    | Embeddings + optional query rewrite                      |
+| `ADAPTER_TOKEN_KEY` | Required by core's crypto module at import time          |
 | `PORT`              | Bound port (Railway sets this; defaults to 3030 locally) |
 
 ---
@@ -111,6 +116,7 @@ PORT=3030 bun packages/mcp/dist/http.js
 ```
 
 Smoke-test the HTTP server:
+
 ```bash
 curl -X POST http://localhost:3030/mcp \
   -H "Content-Type: application/json" \

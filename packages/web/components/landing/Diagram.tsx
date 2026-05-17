@@ -41,20 +41,20 @@ type ConsumerNode = {
 };
 
 const SOURCES: SourceNode[] = [
-  { id: "github",     label: "GitHub",      icon: "git-branch", status: "live" },
-  { id: "gitlab",     label: "GitLab",      icon: "git-branch", status: "soon" },
-  { id: "notion",     label: "Notion",      icon: "book",        status: "soon" },
-  { id: "confluence", label: "Confluence",  icon: "file-text",   status: "soon" },
-  { id: "files",      label: "Local files", icon: "folder",      status: "soon" },
-  { id: "postgres",   label: "Postgres",    icon: "database",    status: "soon" },
+  { id: "github", label: "GitHub", icon: "git-branch", status: "live" },
+  { id: "gitlab", label: "GitLab", icon: "git-branch", status: "soon" },
+  { id: "notion", label: "Notion", icon: "book", status: "soon" },
+  { id: "confluence", label: "Confluence", icon: "file-text", status: "soon" },
+  { id: "files", label: "Local files", icon: "folder", status: "soon" },
+  { id: "postgres", label: "Postgres", icon: "database", status: "soon" },
 ];
 
 const CONSUMERS: ConsumerNode[] = [
-  { id: "cursor",   label: "Cursor",     icon: "cursor"   },
-  { id: "claude",   label: "Claude",     icon: "sparkles" },
-  { id: "windsurf", label: "Windsurf",   icon: "code"     },
-  { id: "custom",   label: "Any MCP Client", icon: "terminal" },
-  { id: "chat",     label: "In-app Chat",   icon: "message",  shape: "rect" },
+  { id: "cursor", label: "Cursor", icon: "cursor" },
+  { id: "claude", label: "Claude", icon: "sparkles" },
+  { id: "windsurf", label: "Windsurf", icon: "code" },
+  { id: "custom", label: "Any MCP Client", icon: "terminal" },
+  { id: "chat", label: "In-app Chat", icon: "message", shape: "rect" },
 ];
 
 // Per-node traffic multiplier — applied to dot animation duration. <1 = faster
@@ -99,16 +99,26 @@ function useViewportWidth(): number {
 function DiagramIcon({ name, size = 14 }: { name: IconName; size?: number }) {
   const props = { width: size, height: size, strokeWidth: 1.5 };
   switch (name) {
-    case "git-branch": return <GitBranch {...props} />;
-    case "file-text":  return <FileText {...props} />;
-    case "database":   return <Database {...props} />;
-    case "folder":     return <FolderOpen {...props} />;
-    case "book":       return <BookOpen {...props} />;
-    case "sparkles":   return <Sparkles {...props} />;
-    case "cursor":     return <MousePointer {...props} />;
-    case "code":       return <Code {...props} />;
-    case "terminal":   return <Terminal {...props} />;
-    case "message":    return <MessageSquare {...props} />;
+    case "git-branch":
+      return <GitBranch {...props} />;
+    case "file-text":
+      return <FileText {...props} />;
+    case "database":
+      return <Database {...props} />;
+    case "folder":
+      return <FolderOpen {...props} />;
+    case "book":
+      return <BookOpen {...props} />;
+    case "sparkles":
+      return <Sparkles {...props} />;
+    case "cursor":
+      return <MousePointer {...props} />;
+    case "code":
+      return <Code {...props} />;
+    case "terminal":
+      return <Terminal {...props} />;
+    case "message":
+      return <MessageSquare {...props} />;
   }
 }
 
@@ -169,18 +179,26 @@ export function Diagram() {
   const [hover, setHover] = useState<string | null>(null);
   const vw = useViewportWidth();
   const isMobile = vw < 720;
-  return isMobile
-    ? <CurvesMobile hover={hover} setHover={setHover} />
-    : <CurvesDesktop hover={hover} setHover={setHover} />;
+  return isMobile ? (
+    <CurvesMobile hover={hover} setHover={setHover} />
+  ) : (
+    <CurvesDesktop hover={hover} setHover={setHover} />
+  );
 }
 
 // ─── Desktop: parallel bezier corridors, sources ⇢ indox ⇢ consumers ──────
 
 function CurvesDesktop({ hover, setHover }: HoverProps) {
-  const W = 1100, H = 540;
-  const SBOX_W = 168, SBOX_H = 40, S_GAP = 14;
-  const CBOX_W = 196, CBOX_H = 40, C_GAP = 14;
-  const INDOX_W = 232, INDOX_H = 220;
+  const W = 1100,
+    H = 540;
+  const SBOX_W = 168,
+    SBOX_H = 40,
+    S_GAP = 14;
+  const CBOX_W = 196,
+    CBOX_H = 40,
+    C_GAP = 14;
+  const INDOX_W = 232,
+    INDOX_H = 220;
 
   const sTotalH = SOURCES.length * SBOX_H + (SOURCES.length - 1) * S_GAP;
   const sStartY = (H - sTotalH) / 2;
@@ -229,7 +247,9 @@ function CurvesDesktop({ hover, setHover }: HoverProps) {
       aria-label="Sources route through Indox to AI agents"
       style={{ display: "block", color: "var(--indox-text)" }}
     >
-      <defs><style>{DIAGRAM_STYLES}</style></defs>
+      <defs>
+        <style>{DIAGRAM_STYLES}</style>
+      </defs>
 
       <g aria-hidden="true">
         {sourcePaths.map((d, i) => (
@@ -254,12 +274,7 @@ function CurvesDesktop({ hover, setHover }: HoverProps) {
           const dur = (2.6 + j * 1.2) * trafficFor(s.id);
           const begin = -(j * 4 + i * 0.3);
           return (
-            <circle
-              key={s.id}
-              className="ix-flow-dot"
-              r={2.4}
-              opacity={0.85}
-            >
+            <circle key={s.id} className="ix-flow-dot" r={2.4} opacity={0.85}>
               <animateMotion dur={`${dur}s`} repeatCount="indefinite" begin={`${begin}s`}>
                 <mpath href={`#vA-src-${s.id}`} />
               </animateMotion>
@@ -271,12 +286,7 @@ function CurvesDesktop({ hover, setHover }: HoverProps) {
           const dur = (2.8 + j * 1.1) * trafficFor(c.id);
           const begin = -(j * 4 + i * 0.35 + 0.5);
           return (
-            <circle
-              key={c.id}
-              className="ix-flow-dot"
-              r={2.4}
-              opacity={0.85}
-            >
+            <circle key={c.id} className="ix-flow-dot" r={2.4} opacity={0.85}>
               <animateMotion dur={`${dur}s`} repeatCount="indefinite" begin={`${begin}s`}>
                 <mpath href={`#vA-dst-${c.id}`} />
               </animateMotion>
@@ -308,7 +318,11 @@ function CurvesDesktop({ hover, setHover }: HoverProps) {
             >
               <DiagramIcon name={s.icon} />
             </g>
-            <text x={SBOX_X + 36} y={y + SBOX_H / 2 + 3.5} className={`ix-label ${s.status === "soon" ? "dim" : ""}`}>
+            <text
+              x={SBOX_X + 36}
+              y={y + SBOX_H / 2 + 3.5}
+              className={`ix-label ${s.status === "soon" ? "dim" : ""}`}
+            >
               {s.label}
             </text>
             {s.status === "soon" && (
@@ -350,11 +364,7 @@ function CurvesDesktop({ hover, setHover }: HoverProps) {
         const y = cStartY + i * (CBOX_H + C_GAP);
         const rx = c.shape === "pill" ? CBOX_H / 2 : 4;
         return (
-          <g
-            key={c.id}
-            onMouseEnter={() => setHover(c.id)}
-            onMouseLeave={() => setHover(null)}
-          >
+          <g key={c.id} onMouseEnter={() => setHover(c.id)} onMouseLeave={() => setHover(null)}>
             <rect
               x={CBOX_X}
               y={y}
@@ -384,7 +394,9 @@ function CurvesDesktop({ hover, setHover }: HoverProps) {
         );
       })}
 
-      <text x={SBOX_X} y={sStartY - 18} className="ix-pill">sources</text>
+      <text x={SBOX_X} y={sStartY - 18} className="ix-pill">
+        sources
+      </text>
       <text x={INDOX_X + INDOX_W / 2} y={INDOX_Y - 16} textAnchor="middle" className="ix-pill">
         search server
       </text>
@@ -399,12 +411,17 @@ function CurvesDesktop({ hover, setHover }: HoverProps) {
 
 function CurvesMobile({ hover, setHover }: HoverProps) {
   const W = 380;
-  const SBOX_W = 156, SBOX_H = 34, S_GAP = 10;
-  const INDOX_W = 320, INDOX_H = 96;
+  const SBOX_W = 156,
+    SBOX_H = 34,
+    S_GAP = 10;
+  const INDOX_W = 320,
+    INDOX_H = 96;
   const GAP_BAND = 56;
 
-  const sCols = 2, sRows = Math.ceil(SOURCES.length / sCols);
-  const cCols = 2, cRows = Math.ceil(CONSUMERS.length / cCols);
+  const sCols = 2,
+    sRows = Math.ceil(SOURCES.length / sCols);
+  const cCols = 2,
+    cRows = Math.ceil(CONSUMERS.length / cCols);
   const sBlockH = sRows * SBOX_H + (sRows - 1) * S_GAP;
   const cBlockH = cRows * SBOX_H + (cRows - 1) * S_GAP;
   const sBlockY = 28;
@@ -414,14 +431,16 @@ function CurvesMobile({ hover, setHover }: HoverProps) {
   const INDOX_X = (W - INDOX_W) / 2;
 
   const sourceBox = (i: number) => {
-    const col = i % sCols, row = Math.floor(i / sCols);
+    const col = i % sCols,
+      row = Math.floor(i / sCols);
     const gridW = sCols * SBOX_W + (sCols - 1) * 12;
     const x = (W - gridW) / 2 + col * (SBOX_W + 12);
     const y = sBlockY + row * (SBOX_H + S_GAP);
     return { x, y, cx: x + SBOX_W / 2, cy: y + SBOX_H / 2 };
   };
   const consumerBox = (i: number) => {
-    const col = i % cCols, row = Math.floor(i / cCols);
+    const col = i % cCols,
+      row = Math.floor(i / cCols);
     const gridW = cCols * SBOX_W + (cCols - 1) * 12;
     const x = (W - gridW) / 2 + col * (SBOX_W + 12);
     const y = cBlockY + row * (SBOX_H + S_GAP);
@@ -453,7 +472,7 @@ function CurvesMobile({ hover, setHover }: HoverProps) {
     const midY = (sy + iy) / 2;
     return `M ${b.cx} ${sy} C ${b.cx} ${midY}, ${ix} ${midY}, ${ix} ${iy}`;
   });
-  
+
   const consumerPaths = CONSUMERS.map((_, i) => {
     const b = consumerBox(i);
     const row = Math.floor(i / cCols);
@@ -472,7 +491,9 @@ function CurvesMobile({ hover, setHover }: HoverProps) {
       aria-label="Sources route through Indox to AI agents"
       style={{ display: "block", color: "var(--indox-text)" }}
     >
-      <defs><style>{DIAGRAM_STYLES}</style></defs>
+      <defs>
+        <style>{DIAGRAM_STYLES}</style>
+      </defs>
 
       <g aria-hidden="true">
         {sourcePaths.map((d, i) => (
@@ -495,7 +516,11 @@ function CurvesMobile({ hover, setHover }: HoverProps) {
           const j = jitter(s.id);
           return (
             <circle key={s.id} className="ix-flow-dot" r={2.2}>
-              <animateMotion dur={`${(2.4 + j * 1.4) * trafficFor(s.id)}s`} repeatCount="indefinite" begin={`${-(j * 3 + i * 0.2)}s`}>
+              <animateMotion
+                dur={`${(2.4 + j * 1.4) * trafficFor(s.id)}s`}
+                repeatCount="indefinite"
+                begin={`${-(j * 3 + i * 0.2)}s`}
+              >
                 <mpath href={`#vAm-src-${s.id}`} />
               </animateMotion>
             </circle>
@@ -505,7 +530,11 @@ function CurvesMobile({ hover, setHover }: HoverProps) {
           const j = jitter(c.id, 9);
           return (
             <circle key={c.id} className="ix-flow-dot" r={2.2}>
-              <animateMotion dur={`${(2.6 + j * 1.2) * trafficFor(c.id)}s`} repeatCount="indefinite" begin={`${-(j * 3 + i * 0.25 + 0.4)}s`}>
+              <animateMotion
+                dur={`${(2.6 + j * 1.2) * trafficFor(c.id)}s`}
+                repeatCount="indefinite"
+                begin={`${-(j * 3 + i * 0.25 + 0.4)}s`}
+              >
                 <mpath href={`#vAm-dst-${c.id}`} />
               </animateMotion>
             </circle>
@@ -569,14 +598,7 @@ function CurvesMobile({ hover, setHover }: HoverProps) {
         );
       })}
 
-      <IndoxCore
-        x={INDOX_X}
-        y={indoxY}
-        w={INDOX_W}
-        h={INDOX_H}
-        hover={hover}
-        setHover={setHover}
-      />
+      <IndoxCore x={INDOX_X} y={indoxY} w={INDOX_W} h={INDOX_H} hover={hover} setHover={setHover} />
 
       {CONSUMERS.map((c, i) => {
         const b = consumerBox(i);
@@ -594,16 +616,27 @@ function CurvesMobile({ hover, setHover }: HoverProps) {
             <g transform={`translate(${b.x + 10} ${b.y + SBOX_H / 2 - 7})`}>
               <DiagramIcon name={c.icon} size={12} />
             </g>
-            <text x={b.x + 28} y={b.y + SBOX_H / 2 + 3} className="ix-label" style={{ fontSize: 9.5 }}>
+            <text
+              x={b.x + 28}
+              y={b.y + SBOX_H / 2 + 3}
+              className="ix-label"
+              style={{ fontSize: 9.5 }}
+            >
               {c.label}
             </text>
           </g>
         );
       })}
 
-      <text x={W / 2} y={18} textAnchor="middle" className="ix-pill">sources ↓</text>
-      <text x={W / 2} y={indoxY - 8} textAnchor="middle" className="ix-pill">search server</text>
-      <text x={W / 2} y={cBlockY - 8} textAnchor="middle" className="ix-pill">consumers ↓</text>
+      <text x={W / 2} y={18} textAnchor="middle" className="ix-pill">
+        sources ↓
+      </text>
+      <text x={W / 2} y={indoxY - 8} textAnchor="middle" className="ix-pill">
+        search server
+      </text>
+      <text x={W / 2} y={cBlockY - 8} textAnchor="middle" className="ix-pill">
+        consumers ↓
+      </text>
     </svg>
   );
 }
@@ -616,7 +649,7 @@ function IndoxCore({
   w,
   h,
   hover,
-  setHover
+  setHover,
 }: {
   x: number;
   y: number;
@@ -647,7 +680,7 @@ function IndoxCore({
       ))}
       <text
         x={x + w / 2}
-        y={y + h/2 + 4}
+        y={y + h / 2 + 4}
         textAnchor="middle"
         className="ix-label"
         style={{ letterSpacing: "0.18em" }}

@@ -2,12 +2,11 @@
 
 import { memo, type ReactNode } from "react";
 import type { UIMessage } from "ai";
-import { Streamdown } from "streamdown";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import { cn } from "@/lib/utils";
+import { ChatMessage, MessageBody as UiMessageBody } from "@indox/ui";
 
 const plugins = { cjk, code, math, mermaid };
 
@@ -41,7 +40,7 @@ const components = {
       href={href}
       target={href?.startsWith("http") ? "_blank" : undefined}
       rel={href?.startsWith("http") ? "noopener noreferrer" : undefined}
-      className="text-(--indox-accent) underline decoration-(--indox-accent)/40 underline-offset-2 transition-colors hover:decoration-(--indox-accent)"
+      className="text-brand underline decoration-brand/40 underline-offset-2 transition-colors hover:decoration-brand"
       {...rest}
     />
   ),
@@ -51,26 +50,22 @@ const components = {
   ol: (p: React.OlHTMLAttributes<HTMLOListElement>) => (
     <ol {...p} className="list-decimal space-y-1 pl-5 text-foreground" />
   ),
-  li: (p: React.LiHTMLAttributes<HTMLLIElement>) => (
-    <li {...p} className="[&>p]:m-0" />
-  ),
+  li: (p: React.LiHTMLAttributes<HTMLLIElement>) => <li {...p} className="[&>p]:m-0" />,
   blockquote: (p: React.BlockquoteHTMLAttributes<HTMLQuoteElement>) => (
-    <blockquote
-      {...p}
-      className="border-l-2 border-(--indox-accent) pl-3 text-(--indox-muted) italic"
-    />
+    <blockquote {...p} className="border-l-2 border-brand pl-3 text-ink-2 italic" />
   ),
-  hr: (p: React.HTMLAttributes<HTMLHRElement>) => (
-    <hr {...p} className="my-4 border-(--indox-border)" />
-  ),
+  hr: (p: React.HTMLAttributes<HTMLHRElement>) => <hr {...p} className="my-4 border-border" />,
   table: (p: React.HTMLAttributes<HTMLTableElement>) => (
     <table {...p} className="w-full border-collapse text-left text-[13px]" />
   ),
   th: (p: React.HTMLAttributes<HTMLTableCellElement>) => (
-    <th {...p} className="border-b border-(--indox-border) px-3 py-1.5 font-mono text-[10px] font-normal uppercase tracking-[0.08em] text-(--indox-dim)" />
+    <th
+      {...p}
+      className="border-b border-border px-3 py-1.5 font-mono text-[10px] font-normal uppercase tracking-[0.08em] text-ink-3"
+    />
   ),
   td: (p: React.TdHTMLAttributes<HTMLTableCellElement>) => (
-    <td {...p} className="border-b border-(--indox-border) px-3 py-2 font-mono text-[12px] text-(--indox-muted)" />
+    <td {...p} className="border-b border-border px-3 py-2 font-mono text-[12px] text-ink-2" />
   ),
   // No `code` override — the @streamdown/code plugin renders block code
   // via its own component, and overriding `code` here would bypass it.
@@ -80,25 +75,13 @@ const components = {
 type Role = UIMessage["role"];
 
 export function Message({ from, children }: { from: Role; children: ReactNode }) {
-  const isUser = from === "user";
+  // `system` and other future roles fall through as bot-styled. Wrap children
+  // in a flex column so mixed parts (text + tool calls) stack with consistent
+  // gap — Area.tsx passes them inline via `m.parts.map(...)`.
   return (
-    <div
-      className={cn(
-        "flex w-full max-w-[95%] flex-col gap-2",
-        isUser ? "ml-auto items-end" : "items-start",
-      )}
-    >
-      <div
-        className={cn(
-          "flex w-full min-w-0 max-w-full flex-col gap-2 text-[14px]",
-          isUser
-            ? "w-fit ml-auto border border-(--indox-border) bg-(--indox-surface) px-4 py-3 text-foreground"
-            : "text-foreground",
-        )}
-      >
-        {children}
-      </div>
-    </div>
+    <ChatMessage role={from === "user" ? "user" : "bot"}>
+      <div className="flex flex-col gap-2">{children}</div>
+    </ChatMessage>
   );
 }
 
@@ -107,14 +90,10 @@ export function Message({ from, children }: { from: Role; children: ReactNode })
 export const MessageBody = memo(
   function MessageBody({ children }: { children: string }) {
     return (
-      <Streamdown
-        className="message-body size-full flex flex-col gap-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-        plugins={plugins}
-        components={components}
-      >
+      <UiMessageBody plugins={plugins} components={components}>
         {children}
-      </Streamdown>
+      </UiMessageBody>
     );
   },
-  (prev, next) => prev.children === next.children,
+  (prev, next) => prev.children === next.children
 );

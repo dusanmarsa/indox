@@ -8,9 +8,13 @@ Things Indox uses
 
 ### Embedding
 A list of numbers (a "vector") that represents the *meaning* of a piece of
-text. Indox uses OpenAI's `text-embedding-3-small`, which outputs 1536-dim
-vectors. Two texts about the same thing land near each other in this 1536-D
-space, even if they share no exact words.
+text. Indox uses OpenAI's `text-embedding-3-large` at the full 3072 dimensions,
+stored as `halfvec(3072)` — pgvector's half-precision variant. Float16 cuts
+storage per row in half (so storage matches the old `vector(1536)` layout)
+while letting HNSW index all 3072 dimensions (the standard `vector` type's
+HNSW caps at 2000 dims; `halfvec`'s cap is 4000). float16 precision costs
+under 0.1% on cosine similarity. Two texts about the same thing land near
+each other in this 3072-D space, even if they share no exact words.
 
 ```
 "how do we handle auth"  →  [0.12, -0.04, …, 0.71]
@@ -35,7 +39,10 @@ edges (fine-grained search). You enter at the top, hop down, end up close
 to the answer in `O(log n)` time instead of `O(n)`.
 
 Indox creates an HNSW index in [migration 20260515100000](packages/core/prisma/migrations/20260515100000_add_embedding_hnsw_index/migration.sql).
-Without it, vector search would scan every embedding row on every query.
+Without it, vector search would scan every embedding row on every query. The
+embedding column was later migrated to `halfvec(3072)` in
+[migration 20260518110000](packages/core/prisma/migrations/20260518110000_halfvec_3072/migration.sql)
+so the index can cover the full 3072-dim model output.
 
 ### BM25 — Best Matching 25
 A 1994 ranking algorithm for text relevance. Like TF-IDF but better at
@@ -81,16 +88,29 @@ directly), and works almost as well as fancier methods. See
 
 ### Query rewriting
 Before search, a small `gpt-4o-mini` call rewrites the user's natural-language
-question into 1–2 code-shaped variants. "How do we auth users" might become
-`["session cookie validation", "auth middleware"]`. Each variant gets its own
-embedding + BM25 pass, then RRF fuses everything. Skipped when the query
-already looks like an identifier (`UserService.login`).
+question into 1–2 variants likely to appear verbatim in the indexed content.
+"How do we auth users" might become `["session cookie validation", "auth
+middleware"]`. Each variant gets its own embedding + BM25 pass, then RRF
+fuses everything. The rewriter is mixed-corpus aware — code-shaped questions
+get identifier-leaning variants, prose-shaped questions get topical keyword
+variants. Skipped when the query already looks like an identifier
+(`UserService.login`).
 
 ### Chunking
 LLMs can only embed so much text at once, and you want results pointed at
-*sections* of files, not whole files. Indox splits each file into ~60-line
-windows with overlap. See [`packages/core/src/chunker.ts`](packages/core/src/chunker.ts).
-It's heuristic, not AST-based — "AST-aware-ish" in the comments is honest.
+*sections* of files, not whole files. Indox splits content by shape:
+- **Code** — tree-sitter walks the AST and yields chunks at function /
+  class / method boundaries (with sibling-merging when neighbours are small),
+  so a chunk is a meaningful syntactic unit rather than an arbitrary window.
+- **Prose** (Markdown, Notion pages, transcripts) — split on Markdown heading
+  structure into ~2,400-char sections; long sections fall back to paragraph
+  boundaries.
+- **Blob** — opaque text: fixed-size character windows.
+
+See [`packages/core/src/chunker/`](packages/core/src/chunker/) — adapters
+build a shape-tagged `ContentItem` and call `chunkContent`, which dispatches
+on `shape`, not file extension. Tree-sitter grammars are loaded as WASM via
+`web-tree-sitter` and `tree-sitter-wasms`.
 
 ### SHA-pinned citations
 Every chunk stores a URL like:
@@ -237,7 +257,7 @@ workspaces** instead — `bun --filter` is enough for four packages.
 | BM25 / FTS query | same file (`bm25Search`) |
 | RRF | [`packages/core/src/search/rrf.ts`](packages/core/src/search/rrf.ts) |
 | HNSW index | [`packages/core/prisma/migrations/20260515100000_*`](packages/core/prisma/migrations/) |
-| Chunker | [`packages/core/src/chunker.ts`](packages/core/src/chunker.ts) |
+| Chunker | [`packages/core/src/chunker/`](packages/core/src/chunker/) |
 | Generated tsvector column | [`20260515000000_add_chunk_text_tsv`](packages/core/prisma/migrations/) |
 | pg-boss queue | [`packages/core/src/queue.ts`](packages/core/src/queue.ts) |
 | AES-256-GCM | [`packages/core/src/crypto.ts`](packages/core/src/crypto.ts) |

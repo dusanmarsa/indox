@@ -8,7 +8,7 @@ export const schema = {
     .string()
     .min(1)
     .describe(
-      "What to search for. Natural language is fine — Indox runs hybrid retrieval (vector + BM25) and rewrites the query internally for code-shaped lookups.",
+      "What to search for. Natural language is fine — Indox runs hybrid retrieval (vector + BM25) and rewrites the query internally for code-shaped lookups."
     ),
   limit: z
     .number()
@@ -32,10 +32,7 @@ export const metadata: ToolMetadata = {
   },
 };
 
-export default async function searchCode({
-  query,
-  limit,
-}: InferSchema<typeof schema>) {
+export default async function searchCode({ query, limit }: InferSchema<typeof schema>) {
   const auth = await authenticate();
   if (isAuthFailure(auth)) return auth;
 

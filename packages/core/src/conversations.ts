@@ -1,13 +1,6 @@
-// Conversation persistence. Scoped to (workspaceId, userId) so a leaked
-// conversation id can't be read across workspaces, and — once shared
-// workspaces ship — can't be read across members of the same workspace.
-
 import prisma from "./db";
 
 const TITLE_MAX = 60;
-// JSONB has no inherent ceiling; a runaway tool result can bloat one row
-// into MBs and slow every read of the conversation. Cap covers normal turns
-// with plenty of headroom.
 const PARTS_MAX_BYTES = 256 * 1024;
 
 export type PersistedMessage = {
@@ -29,90 +22,118 @@ export type ConversationScope = {
   userId: string;
 };
 
+export type AnonConversationScope = {
+  workspaceId: string;
+  anonSessionId: string;
+};
+
 export async function createConversation(
   scope: ConversationScope,
-  title: string | null = null,
+  title: string | null = null
 ): Promise<ConversationSummary> {
   const row = await prisma.conversation.create({
     data: { workspaceId: scope.workspaceId, userId: scope.userId, title },
   });
-  return summary(row);
+  return toSummary(row);
+}
+
+export async function getOrCreateAnonConversation(
+  scope: AnonConversationScope
+): Promise<ConversationSummary> {
+  const existing = await prisma.conversation.findFirst({
+    where: { workspaceId: scope.workspaceId, anonSessionId: scope.anonSessionId },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existing) return toSummary(existing);
+
+  try {
+    const row = await prisma.conversation.create({
+      data: { workspaceId: scope.workspaceId, anonSessionId: scope.anonSessionId },
+    });
+    return toSummary(row);
+  } catch {
+    const row = await prisma.conversation.findFirst({
+      where: { workspaceId: scope.workspaceId, anonSessionId: scope.anonSessionId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!row) throw new Error("Failed to create or find anon conversation");
+    return toSummary(row);
+  }
+}
+
+export async function getAnonConversation(
+  scope: AnonConversationScope
+): Promise<{ summary: ConversationSummary; messages: PersistedMessage[] } | null> {
+  const row = await prisma.conversation.findFirst({
+    where: { workspaceId: scope.workspaceId, anonSessionId: scope.anonSessionId },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!row) return null;
+  return {
+    summary: toSummary(row),
+    messages: row.messages.map(toMessage),
+  };
 }
 
 export async function listConversations(
   scope: ConversationScope,
-  limit = 100,
+  limit = 100
 ): Promise<ConversationSummary[]> {
   const rows = await prisma.conversation.findMany({
     where: { workspaceId: scope.workspaceId, userId: scope.userId },
-    // `id` tiebreaker stabilises order when two rows share updatedAt;
-    // without it the sidebar shuffles between reloads.
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: Math.min(limit, 500),
   });
-  return rows.map(summary);
+  return rows.map(toSummary);
 }
 
 export async function getConversation(
   id: string,
-  scope: ConversationScope,
+  scope: ConversationScope
 ): Promise<{ summary: ConversationSummary; messages: PersistedMessage[] } | null> {
   const row = await prisma.conversation.findFirst({
     where: { id, workspaceId: scope.workspaceId, userId: scope.userId },
-    include: {
-      messages: { orderBy: { createdAt: "asc" } },
-    },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
   });
   if (!row) return null;
   return {
-    summary: summary(row),
-    messages: row.messages.map((m) => ({
-      id: m.id,
-      role: m.role,
-      parts: m.parts as unknown,
-      createdAt: m.createdAt,
-    })),
+    summary: toSummary(row),
+    messages: row.messages.map(toMessage),
   };
 }
 
-export async function deleteConversation(
-  id: string,
-  scope: ConversationScope,
-): Promise<boolean> {
+export async function deleteConversation(id: string, scope: ConversationScope): Promise<boolean> {
   const r = await prisma.conversation.deleteMany({
     where: { id, workspaceId: scope.workspaceId, userId: scope.userId },
   });
   return r.count > 0;
 }
 
-// Append a message and bump updatedAt. On the user's first message we
-// derive a sidebar title from its text.
 export async function appendMessage(
   conversationId: string,
-  scope: ConversationScope,
-  message: { id?: string; role: string; parts: unknown },
+  scope: ConversationScope | AnonConversationScope,
+  message: { id?: string; role: string; parts: unknown }
 ): Promise<PersistedMessage | null> {
   const serialised = JSON.stringify(message.parts ?? null);
   if (serialised.length > PARTS_MAX_BYTES) {
-    throw new Error(
-      `message parts too large (${serialised.length} bytes, max ${PARTS_MAX_BYTES})`,
-    );
+    throw new Error(`message parts too large (${serialised.length} bytes, max ${PARTS_MAX_BYTES})`);
   }
 
-  // One transaction so we don't leave an orphan message when the
-  // updatedAt bump fails.
+  const scopeWhere =
+    "userId" in scope
+      ? { workspaceId: scope.workspaceId, userId: scope.userId }
+      : { workspaceId: scope.workspaceId, anonSessionId: scope.anonSessionId };
+
   return prisma.$transaction(async (tx) => {
     const conv = await tx.conversation.findFirst({
-      where: { id: conversationId, workspaceId: scope.workspaceId, userId: scope.userId },
+      where: { id: conversationId, ...scopeWhere },
       select: { id: true, title: true },
     });
     if (!conv) return null;
 
     const created = await tx.conversationMessage.create({
       data: {
-        // Only forward explicit ids — the AI SDK passes `""` for assistant
-        // messages when no generateMessageId is set, which bypasses the
-        // schema's cuid default and collides on the next insert.
         ...(message.id ? { id: message.id } : {}),
         conversationId,
         role: message.role,
@@ -131,36 +152,37 @@ export async function appendMessage(
       },
     });
 
-    return {
-      id: created.id,
-      role: created.role,
-      parts: created.parts as unknown,
-      createdAt: created.createdAt,
-    };
+    return toMessage(created);
   });
 }
 
-function summary(row: {
+function toSummary(row: {
   id: string;
   title: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): ConversationSummary {
-  return {
-    id: row.id,
-    title: row.title,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
+  return { id: row.id, title: row.title, createdAt: row.createdAt, updatedAt: row.updatedAt };
 }
 
-// Pull the first text part out of an AI SDK UIMessage and trim it for
-// the sidebar. Returns null when there's no readable text (e.g. message
-// is only @-chip mentions).
+function toMessage(m: {
+  id: string;
+  role: string;
+  parts: unknown;
+  createdAt: Date;
+}): PersistedMessage {
+  return { id: m.id, role: m.role, parts: m.parts as unknown, createdAt: m.createdAt };
+}
+
 function deriveTitle(parts: unknown): string | null {
   if (!Array.isArray(parts)) return null;
   for (const p of parts) {
-    if (p && typeof p === "object" && "text" in p && typeof (p as { text: unknown }).text === "string") {
+    if (
+      p &&
+      typeof p === "object" &&
+      "text" in p &&
+      typeof (p as { text: unknown }).text === "string"
+    ) {
       const raw = (p as { text: string }).text.replace(/@\[([^\]]+)\]/g, "$1").trim();
       if (raw) return raw.length > TITLE_MAX ? raw.slice(0, TITLE_MAX - 1) + "…" : raw;
     }

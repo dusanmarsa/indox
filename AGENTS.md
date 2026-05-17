@@ -106,9 +106,19 @@ a fresh clone or schema change). Config: `packages/core/prisma.config.ts`
 - **Every chunk stores a SHA-pinned `chunk_url`.** Never construct
   `/blob/main/…` URLs — the default branch may not be `main`. The stored
   URL at index time is the authoritative citation.
-- **Hardcoded models:** embeddings `text-embedding-3-small`
-  ([`hybrid.ts`](packages/core/src/search/hybrid.ts)), chat `gpt-4o-mini`
-  ([`route.ts`](packages/web/app/api/chat/route.ts)). Not env-configurable yet.
+- **Hardcoded models:** embeddings `text-embedding-3-large` at the full 3072
+  dimensions, stored as `halfvec(3072)`
+  ([`hybrid.ts`](packages/core/src/search/hybrid.ts)); chat default
+  `gpt-4o-mini` ([`route.ts`](packages/web/app/api/chat/route.ts)). Not
+  env-configurable yet.
+- **`@indox/core` barrel is split.** The root export (`@indox/core`) is the
+  process-safe surface (prisma, search, queue, workspace helpers, types).
+  Adapter drivers, sync orchestration, and the chunker live behind subpath
+  entrypoints (`@indox/core/adapters`, `@indox/core/adapters/github`,
+  `@indox/core/adapters/notion`, `@indox/core/sync`). Re-adding them to the
+  root barrel re-leaks the chunker → `vendor.ts` → tree-sitter graph into the
+  web process. Web lint forbids it
+  ([`packages/web/eslint.config.mjs`](packages/web/eslint.config.mjs)).
 
 ---
 
@@ -117,7 +127,11 @@ a fresh clone or schema change). Config: `packages/core/prisma.config.ts`
 1. Create `packages/core/src/adapters/<name>.ts` implementing `AdapterDriver`
    (see [`adapters/types.ts`](packages/core/src/adapters/types.ts)).
 2. Register it in [`registry.ts`](packages/core/src/adapters/registry.ts).
-3. Export public helpers from [`packages/core/src/index.ts`](packages/core/src/index.ts).
+3. Add a subpath export in
+   [`packages/core/package.json`](packages/core/package.json) (e.g.
+   `"./adapters/<name>": "./src/adapters/<name>.ts"`) so per-driver helpers
+   (`listX`, `resolveX`) are reachable without going through the root barrel.
+   Only adapter TYPES belong on the root barrel.
 4. Add a Prisma migration if the schema needs updating.
 5. The worker auto-picks up new adapter kinds via `syncAdapter`.
 

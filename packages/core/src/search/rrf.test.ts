@@ -40,10 +40,7 @@ test("higher rank in either retriever loses to lower rank elsewhere", () => {
 });
 
 test("meta is taken from first occurrence (deterministic)", () => {
-  const out = fuse<string, string>([
-    [r("x", 1, "first")],
-    [r("x", 5, "second")],
-  ]);
+  const out = fuse<string, string>([[r("x", 1, "first")], [r("x", 5, "second")]]);
   expect(out).toHaveLength(1);
   expect(out[0].meta).toBe("first");
   expect(out[0].hits).toBe(2);

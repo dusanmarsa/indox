@@ -1,20 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import {
-  prisma,
-  enqueueAdapterSync,
-  getDriver,
-  listAdapterKinds,
-  logger,
-  encryptToken,
-} from "@indox/core";
+import { prisma, enqueueAdapterSync, logger, encryptToken } from "@indox/core";
+import { getDriver, listAdapterKinds } from "@indox/core/adapters";
 import { requireWorkspace } from "@/lib/session";
 import { isSameOrigin, csrfReject } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
 const createAdapterSchema = z.object({
-  kind: z.enum(["github"] as [string, ...string[]]),
+  kind: z.enum(["github", "notion"] as [string, ...string[]]),
   authIdentity: z.string().min(1).optional().nullable(),
   token: z.string().min(1).max(4096),
   scope: z.unknown(),
@@ -38,11 +32,14 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = createAdapterSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "invalid payload", details: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid payload", details: parsed.error.flatten() },
+      { status: 400 }
+    );
   }
   const { kind, authIdentity, token, scope: rawScope } = parsed.data;
 
-  if (!listAdapterKinds().includes(kind as "github")) {
+  if (!listAdapterKinds().includes(kind as "github" | "notion")) {
     return NextResponse.json({ error: `unknown adapter kind: ${kind}` }, { status: 400 });
   }
 
@@ -66,15 +63,15 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Empty repos[] is the normal path — user creates the adapter first, then
-  // picks repos one by one via the per-source sync queue.
-  const scopeHasWork =
-    (scope as { mode: string; value: unknown }).mode !== "repos" ||
-    (Array.isArray((scope as { value: unknown[] }).value) &&
-      (scope as { value: unknown[] }).value.length > 0);
+  // Empty allowlist is the normal "create-then-pick" path for both kinds
+  // (`repos` for github, `pages` for notion). Skip enqueueing a no-op sync;
+  // the user will add sources individually via the manage page.
+  const s = scope as { mode: string; value?: unknown };
+  const isExplicitAllowlistMode = s.mode === "repos" || s.mode === "pages";
+  const scopeHasWork = !isExplicitAllowlistMode || (Array.isArray(s.value) && s.value.length > 0);
   if (scopeHasWork) {
     enqueueAdapterSync(adapter.id).catch((err) =>
-      logger.error("api", `failed to enqueue sync for ${adapter.id}: ${err}`),
+      logger.error("api", `failed to enqueue sync for ${adapter.id}: ${err}`)
     );
   }
 

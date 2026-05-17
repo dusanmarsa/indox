@@ -10,12 +10,7 @@ import { encryptToken, decryptToken } from "./crypto";
 // public-platform-key path can't burn credits on premium models.
 
 export const DEFAULT_MODEL = "gpt-4o-mini";
-export const ALLOWED_MODELS = [
-  "gpt-4o-mini",
-  "gpt-4o",
-  "gpt-4.1",
-  "gpt-4.1-mini",
-] as const;
+export const ALLOWED_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini"] as const;
 export type AllowedModel = (typeof ALLOWED_MODELS)[number];
 
 export function isAllowedModel(m: string): m is AllowedModel {
@@ -54,9 +49,7 @@ const RESERVED_SLUGS = new Set([
   "signin",
 ]);
 
-export type SlugValidation =
-  | { ok: true }
-  | { ok: false; reason: string };
+export type SlugValidation = { ok: true } | { ok: false; reason: string };
 
 export function validateSlug(slug: string): SlugValidation {
   if (slug.length < 3 || slug.length > 48) {
@@ -65,7 +58,8 @@ export function validateSlug(slug: string): SlugValidation {
   if (!SLUG_RE.test(slug)) {
     return {
       ok: false,
-      reason: "Slug can use lowercase letters, digits, and hyphens; must start and end with a letter or digit.",
+      reason:
+        "Slug can use lowercase letters, digits, and hyphens; must start and end with a letter or digit.",
     };
   }
   if (RESERVED_SLUGS.has(slug)) {
@@ -87,9 +81,7 @@ export type WorkspaceSettings = {
   dailyCallLimit: number;
 };
 
-export async function getWorkspaceSettings(
-  workspaceId: string,
-): Promise<WorkspaceSettings | null> {
+export async function getWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings | null> {
   const row = await prisma.workspace.findUnique({
     where: { id: workspaceId },
     select: {
@@ -139,7 +131,7 @@ const MAX_DAILY_LIMIT_BYO_KEY = 10_000;
 export async function updateWorkspaceSettings(
   workspaceId: string,
   ownerId: string,
-  patch: UpdateWorkspaceSettings,
+  patch: UpdateWorkspaceSettings
 ): Promise<UpdateResult> {
   // Resolve the current state once — we'll need it for cross-field
   // validation (e.g. a non-default model is only allowed with a BYO key).

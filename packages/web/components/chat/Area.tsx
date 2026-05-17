@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
-import { Check, Search } from "lucide-react";
+import { ChatThinking, ChatToolCall } from "@indox/ui";
 import { Message, MessageBody } from "./Message";
 import { useChatContext } from "./context";
 
@@ -15,17 +15,15 @@ function UserText({ text }: { text: string }) {
   for (const m of text.matchAll(MENTION_TOKEN_RE)) {
     const idx = m.index ?? 0;
     if (idx > lastIndex) {
-      nodes.push(
-        <Fragment key={`t-${lastIndex}`}>{text.slice(lastIndex, idx)}</Fragment>,
-      );
+      nodes.push(<Fragment key={`t-${lastIndex}`}>{text.slice(lastIndex, idx)}</Fragment>);
     }
     nodes.push(
       <span
         key={`c-${idx}`}
-        className="inline-flex items-center align-middle border border-(--indox-border) bg-(--indox-bg) px-1.5 py-0.5 mx-0.5 font-mono text-[11px] text-(--indox-muted)"
+        className="mx-0.5 inline-flex items-center rounded-xs bg-brand-soft px-1.5 py-px align-middle font-mono text-[11px] text-brand"
       >
         @{m[1]}
-      </span>,
+      </span>
     );
     lastIndex = idx + m[0].length;
   }
@@ -67,7 +65,7 @@ const ChatArea = () => {
       // 160px bottom margin: treat "within a screenful of the end" as still
       // pinned, so small streaming jitters and the sticky input bar don't
       // trip the user-scrolled-away detection.
-      { root: null, rootMargin: "0px 0px 160px 0px", threshold: 0 },
+      { root: null, rootMargin: "0px 0px 160px 0px", threshold: 0 }
     );
     obs.observe(el);
     return () => obs.disconnect();
@@ -97,7 +95,7 @@ const ChatArea = () => {
     isLoading && (!lastMessage || lastMessage.role === "user" || lastMessage.parts.length === 0);
 
   return (
-    <div className="flex-1 flex flex-col gap-8 pt-20 pb-20">
+    <div className="flex flex-col gap-10">
       {messages.map((m, mi) => (
         // The AI SDK occasionally emits two messages with the same id during
         // streaming (e.g. optimistic + server-assigned colliding). Combine
@@ -114,104 +112,80 @@ const ChatArea = () => {
             if (p.type === "tool-searchCode") {
               const input = p.input as { query?: string; sources?: string[] } | undefined;
               const query = input?.query;
-              const scope = input?.sources?.length
-                ? input.sources.join(", ")
-                : null;
-
-              if (p.state !== "output-available") {
-                return (
-                  <div key={i} className="flex items-center gap-2 font-mono text-[12px] text-(--indox-muted)">
-                    <span className="inline-block h-2 w-2 animate-pulse bg-(--indox-dim)" />
-                    <span>
-                      Searching{scope ? ` ${scope}` : ""}
-                      {query ? ` for "${query}"` : ""}…
-                    </span>
-                  </div>
-                );
-              }
-
-              const out = p.output as SearchOutput;
-              const summary =
-                out.status === "ok"
-                  ? `${out.chunks.length} chunk${out.chunks.length === 1 ? "" : "s"}`
-                  : out.status === "unknown_source"
-                  ? "unknown source"
-                  : "no results";
+              const scope = input?.sources?.length ? input.sources.join(", ") : null;
+              const isDone = p.state === "output-available";
+              const out = isDone ? (p.output as SearchOutput) : null;
+              const status = !isDone ? "running" : out?.status === "ok" ? "done" : "error";
               const resolvedScope =
-                out.status === "ok" && out.scope?.matched.length
+                out?.status === "ok" && out.scope?.matched.length
                   ? out.scope.matched.join(", ")
                   : scope;
-
+              const summary =
+                out?.status === "ok"
+                  ? `${out.chunks.length} chunk${out.chunks.length === 1 ? "" : "s"}`
+                  : out?.status === "unknown_source"
+                    ? "unknown source"
+                    : out?.status === "no_results"
+                      ? "no results"
+                      : null;
               return (
-                <div
+                <ChatToolCall
                   key={i}
-                  className="flex items-center gap-2 font-mono text-[11.5px] text-(--indox-dim)"
-                >
-                  {out.status === "ok" ? (
-                    <Check className="size-3 text-(--indox-ok)" />
-                  ) : (
-                    <Search className="size-3" />
-                  )}
-                  <span>
-                    Searched
-                    {resolvedScope ? (
-                      <> <span className="text-(--indox-muted)">{resolvedScope}</span></>
-                    ) : null}
-                    {query ? (
-                      <> for <span className="italic text-(--indox-muted)">&ldquo;{query}&rdquo;</span></>
-                    ) : null}
-                    {" · "}
-                    {summary}
-                  </span>
-                </div>
+                  name={
+                    <>
+                      search{resolvedScope ? ` · ${resolvedScope}` : ""}
+                      {query ? <span className="text-ink-3">{` "${query}"`}</span> : null}
+                    </>
+                  }
+                  status={status}
+                  result={summary ?? undefined}
+                />
               );
             }
             if (p.type === "tool-listSources") {
-              if (p.state !== "output-available") {
-                return (
-                  <div key={i} className="flex items-center gap-2 font-mono text-[12px] text-(--indox-muted)">
-                    <span className="inline-block h-2 w-2 animate-pulse bg-(--indox-dim)" />
-                    <span>Listing sources…</span>
-                  </div>
-                );
-              }
-              const out = p.output as ListSourcesOutput;
+              const isDone = p.state === "output-available";
+              const out = isDone ? (p.output as ListSourcesOutput) : null;
               return (
-                <div
+                <ChatToolCall
                   key={i}
-                  className="flex items-center gap-2 font-mono text-[11.5px] text-(--indox-dim)"
-                >
-                  <Check className="size-3 text-(--indox-ok)" />
-                  <span>
-                    Listed sources · <span className="text-(--indox-muted)">{out.count}</span>
-                  </span>
-                </div>
+                  name="list sources"
+                  status={isDone ? "done" : "running"}
+                  result={out ? `${out.count} source${out.count === 1 ? "" : "s"}` : undefined}
+                />
               );
             }
             return null;
           })}
         </Message>
       ))}
-      {showThinking && (
-        <div className="flex items-center gap-2 font-mono text-[12px] text-(--indox-muted)">
-          <span className="inline-block h-2 w-2 animate-pulse bg-(--indox-dim)" />
-          <span>Thinking…</span>
-        </div>
-      )}
+      {showThinking && <ChatThinking streaming label="Thinking" />}
       <div ref={bottomRef} aria-hidden className="h-0 w-0 scroll-mb-32" />
-      {!isAtBottom && (
-        <button
-          type="button"
-          onClick={jumpToBottom}
-          aria-label="Jump to latest"
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 border border-(--indox-border) bg-(--indox-surface) px-3 py-1.5 font-mono text-[11.5px] text-(--indox-muted) shadow-lg hover:text-(--indox-fg) hover:border-(--indox-muted) transition-colors"
-        >
-          <ArrowDown className="size-3" />
-          {isLoading ? "new messages" : "jump to latest"}
-        </button>
-      )}
+      {/* "Jump to latest" pill — rendered as a portal-like sibling of the
+          composer rather than `fixed` from the viewport. The chat page shell
+          provides the positioning context via `data-chat-shell`. */}
+      {!isAtBottom && <JumpToLatest onJump={jumpToBottom} loading={isLoading} />}
     </div>
   );
 };
+
+// Sits inside the scrollable thread but pins itself to the bottom of the
+// nearest `[data-chat-shell]` container via `sticky bottom-0`. That way it
+// always rides just above the composer regardless of composer height, with no
+// fragile fixed-viewport magic numbers.
+function JumpToLatest({ onJump, loading }: { onJump: () => void; loading: boolean }) {
+  return (
+    <div className="pointer-events-none sticky bottom-3 z-20 flex justify-center">
+      <button
+        type="button"
+        onClick={onJump}
+        aria-label="Jump to latest"
+        className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 font-mono text-[11.5px] text-ink-2 shadow-lg transition-colors hover:border-border-strong hover:text-ink"
+      >
+        <ArrowDown className="size-3" />
+        {loading ? "new messages" : "jump to latest"}
+      </button>
+    </div>
+  );
+}
 
 export default ChatArea;

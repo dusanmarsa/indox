@@ -8,7 +8,7 @@ function useIsClient() {
   return useSyncExternalStore(
     () => () => {},
     () => true,
-    () => false,
+    () => false
   );
 }
 
@@ -22,7 +22,7 @@ export function DashThemeToggle() {
   return (
     <button
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="flex size-[22px] items-center justify-center text-(--indox-muted) transition-colors hover:text-foreground"
+      className="flex size-[22px] items-center justify-center text-ink-2 transition-colors hover:text-foreground"
       aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
     >
       {isDark ? <Sun className="size-[13px]" /> : <Moon className="size-[13px]" />}

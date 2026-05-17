@@ -1,6 +1,6 @@
 {
   "name": "indox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "workspaces": [
@@ -8,13 +8,16 @@
   ],
   "scripts": {
     "dev": "bun --filter '@indox/web' --filter '@indox/worker' dev",
+    "dev:ui": "bun --filter @indox/ui storybook dev -p 6006",
     "dev:web": "bun --filter @indox/web dev",
     "dev:worker": "bun --filter @indox/worker dev",
+    "widget:test": "bun scripts/widget-test.ts",
     "build": "bun --filter @indox/web build",
     "start": "bun --filter @indox/web start",
     "start:worker": "bun --filter @indox/worker start",
     "lint": "bun --filter '*' lint",
     "test": "bun test",
+    "eval": "bun --env-file=.env evals/run.ts",
     "typecheck": "bun --filter '*' typecheck",
     "db:migrate": "bun --filter @indox/core db:migrate",
     "db:push": "bun --filter @indox/core db:push",
@@ -23,12 +26,15 @@
     "prepare": "bunx --bun husky"
   },
   "lint-staged": {
-    "packages/web/**/*.{ts,tsx,js,jsx}": "sh -c 'cd packages/web && exec bun --bun ./node_modules/eslint/bin/eslint.js --fix \"$@\"' --"
+    "packages/web/**/*.{ts,tsx,js,jsx}": "sh -c 'cd packages/web && exec bun --bun ./node_modules/eslint/bin/eslint.js --fix \"$@\"' --",
+    "packages/ui/**/*.{ts,tsx,js,jsx}": "sh -c 'cd packages/ui && exec bun --bun ./node_modules/eslint/bin/eslint.js --fix \"$@\"' --"
   },
   "devDependencies": {
+    "@indox/core": "workspace:*",
     "@types/bun": "^1.3.14",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.5",
+    "prettier": "^3.5.3",
     "typescript": "^5.9.3"
   },
   "engines": {

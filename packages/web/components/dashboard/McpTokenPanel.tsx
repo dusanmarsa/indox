@@ -1,18 +1,19 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { CodeCard, IconButton, Input, Label, SegmentedControl } from "@indox/ui";
+import { RefreshCw } from "lucide-react";
 
 // Token + rotate button + copy-pasteable snippets for the major clients.
-// Token is rendered masked by default; the MCP URL embeds the token as a
-// query string so clients that don't pass custom headers (some Cursor
-// versions, plain curl tests) still authenticate.
+// The MCP URL embeds the token as a query string so clients that don't pass
+// custom headers (some Cursor versions, plain curl tests) still authenticate.
 
 const CLIENTS = [
-  { id: "cursor", label: "Cursor / generic JSON" },
-  { id: "claude-desktop", label: "Claude Desktop" },
-  { id: "claude-code", label: "Claude Code (CLI)" },
+  { value: "cursor", label: "Cursor" },
+  { value: "claude-desktop", label: "Claude Desktop" },
+  { value: "claude-code", label: "Claude Code" },
 ] as const;
-type ClientId = (typeof CLIENTS)[number]["id"];
+type ClientId = (typeof CLIENTS)[number]["value"];
 
 export default function McpTokenPanel({
   initialToken,
@@ -22,19 +23,18 @@ export default function McpTokenPanel({
   mcpUrl: string;
 }) {
   const [token, setToken] = useState(initialToken);
-  const [revealed, setRevealed] = useState(false);
   const [rotating, setRotating] = useState(false);
   const [client, setClient] = useState<ClientId>("cursor");
 
   const fullUrl = useMemo(() => `${mcpUrl}?token=${token}`, [mcpUrl, token]);
-
-  const masked =
-    token.slice(0, 8) + "•".repeat(Math.max(token.length - 12, 4)) + token.slice(-4);
-
   const snippet = useMemo(() => snippetFor(client, fullUrl), [client, fullUrl]);
 
   const rotate = async () => {
-    if (!confirm("Rotate token? Any agents currently using the old token will lose access until reconfigured.")) {
+    if (
+      !confirm(
+        "Rotate token? Any agents currently using the old token will lose access until reconfigured."
+      )
+    ) {
       return;
     }
     setRotating(true);
@@ -43,7 +43,6 @@ export default function McpTokenPanel({
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "rotate failed");
       setToken(json.token);
-      setRevealed(true);
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     } finally {
@@ -51,79 +50,50 @@ export default function McpTokenPanel({
     }
   };
 
-  const copy = (text: string) => navigator.clipboard.writeText(text);
-
   return (
-    <div className="space-y-8">
-      {/* ─── Token ─────────────────────────────────────────────────────── */}
-      <section className="border border-(--indox-border)">
-        <div className="flex items-center justify-between border-b border-(--indox-border) bg-(--indox-surface) px-[18px] py-[13px]">
-          <span className="text-[13px] font-medium">Bearer token</span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setRevealed((v) => !v)}
-              className="font-mono text-[11px] text-(--indox-muted) transition-colors hover:text-foreground"
-            >
-              {revealed ? "hide" : "reveal"}
-            </button>
-            <span className="text-(--indox-dim)">·</span>
-            <button
-              onClick={() => copy(token)}
-              className="font-mono text-[11px] text-(--indox-muted) transition-colors hover:text-foreground"
-            >
-              copy
-            </button>
-            <span className="text-(--indox-dim)">·</span>
-            <button
-              onClick={rotate}
-              disabled={rotating}
-              className="font-mono text-[11px] text-(--indox-muted) transition-colors hover:text-[#8a6a1e] disabled:opacity-40"
-            >
-              {rotating ? "rotating…" : "rotate"}
-            </button>
-          </div>
+    <div className="flex flex-col gap-8">
+      <section className="overflow-hidden rounded-md border border-border bg-surface">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <span className="text-[13px] font-medium tracking-[-0.01em] text-ink">Bearer token</span>
+          <IconButton
+            onClick={rotate}
+            disabled={rotating}
+            aria-label={rotating ? "Rotating token" : "Rotate token"}
+            title="Rotate token"
+          >
+            <RefreshCw className={`size-3.5 ${rotating ? "animate-spin" : ""}`} />
+          </IconButton>
         </div>
-        <div className="px-[18px] py-[14px] font-mono text-[12px] text-foreground break-all">
-          {revealed ? token : masked}
+        <div className="flex flex-col gap-3 px-4 py-4">
+          <Label htmlFor="mcp-token">Token</Label>
+          <Input
+            id="mcp-token"
+            type="password"
+            value={token}
+            readOnly
+            revealable
+            copyable
+            className="font-mono text-[12.5px]"
+          />
         </div>
-        <div className="border-t border-(--indox-border) bg-(--indox-surface)/40 px-[18px] py-[10px] font-mono text-[11px] text-(--indox-muted)">
-          The token authorises tool calls as you. Treat it like a password —
-          anyone who has it can read your indexed sources.
-        </div>
+        <p className="border-t border-border bg-overlay-tint px-4 py-2.5 font-mono text-[11px] text-ink-2">
+          The token authorises tool calls as you. Treat it like a password — anyone who has it can
+          read your indexed sources.
+        </p>
       </section>
 
-      {/* ─── Connection snippet ────────────────────────────────────────── */}
-      <section className="border border-(--indox-border)">
-        <div className="flex items-center justify-between border-b border-(--indox-border) bg-(--indox-surface) px-[18px] py-[13px]">
-          <span className="text-[13px] font-medium">Client config</span>
-          <div className="flex gap-2">
-            {CLIENTS.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setClient(c.id)}
-                className={`font-mono text-[11px] transition-colors ${
-                  client === c.id ? "text-foreground" : "text-(--indox-muted) hover:text-foreground"
-                }`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-[13px] font-medium tracking-[-0.01em] text-ink">Client config</span>
+          <SegmentedControl
+            value={client}
+            onValueChange={(v) => setClient(v as ClientId)}
+            options={CLIENTS.map((c) => ({ value: c.value, label: c.label }))}
+            className="self-start sm:self-auto"
+          />
         </div>
-        <pre className="overflow-x-auto px-[18px] py-[14px] font-mono text-[11.5px] text-foreground">
-          {snippet}
-        </pre>
-        <div className="border-t border-(--indox-border) bg-(--indox-surface)/40 px-[18px] py-[10px] flex items-center justify-between">
-          <span className="font-mono text-[11px] text-(--indox-muted)">
-            {hintFor(client)}
-          </span>
-          <button
-            onClick={() => copy(snippet)}
-            className="font-mono text-[11px] text-(--indox-muted) transition-colors hover:text-foreground"
-          >
-            copy
-          </button>
-        </div>
+        <CodeCard copyValue={snippet}>{snippet}</CodeCard>
+        <p className="font-mono text-[11px] text-ink-3">{hintFor(client)}</p>
       </section>
     </div>
   );
@@ -139,7 +109,7 @@ function snippetFor(client: ClientId, url: string): string {
           },
         },
         null,
-        2,
+        2
       );
     case "claude-desktop":
       // Claude Desktop only speaks stdio — it bridges to HTTP via mcp-remote.
@@ -153,7 +123,7 @@ function snippetFor(client: ClientId, url: string): string {
           },
         },
         null,
-        2,
+        2
       );
     case "claude-code":
       // The CLI registers via a single command, no JSON file editing.

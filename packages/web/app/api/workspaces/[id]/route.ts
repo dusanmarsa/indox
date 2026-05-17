@@ -12,10 +12,7 @@ import { isSameOrigin, csrfReject } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  _req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await ctx.params;
   const owned = await getOwnedWorkspace(id, user.id);
@@ -39,10 +36,7 @@ const patchSchema = z.object({
   dailyCallLimit: z.number().int().optional(),
 });
 
-export async function PATCH(
-  req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!isSameOrigin(req)) return csrfReject();
   const user = await requireUser();
   const { id } = await ctx.params;
@@ -51,23 +45,17 @@ export async function PATCH(
   if (!parsed.success) {
     return NextResponse.json(
       { error: "invalid payload", details: parsed.error.flatten() },
-      { status: 400 },
+      { status: 400 }
     );
   }
   const result = await updateWorkspaceSettings(id, user.id, parsed.data);
   if (!result.ok) {
-    return NextResponse.json(
-      { error: result.reason, field: result.field },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: result.reason, field: result.field }, { status: 400 });
   }
   return NextResponse.json({ settings: result.settings });
 }
 
-export async function DELETE(
-  req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!isSameOrigin(req)) return csrfReject();
   const user = await requireUser();
   const { id } = await ctx.params;

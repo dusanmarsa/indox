@@ -15,10 +15,7 @@ export type Fused<Id, Meta> = {
   meta: Meta;
 };
 
-export function fuse<Id, Meta>(
-  lists: Ranked<Id, Meta>[][],
-  k: number = RRF_K,
-): Fused<Id, Meta>[] {
+export function fuse<Id, Meta>(lists: Ranked<Id, Meta>[][], k: number = RRF_K): Fused<Id, Meta>[] {
   const acc = new Map<Id, Fused<Id, Meta>>();
   for (const list of lists) {
     for (const r of list) {

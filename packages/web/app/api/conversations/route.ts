@@ -1,7 +1,4 @@
-import {
-  createConversation,
-  listConversations,
-} from "@indox/core";
+import { createConversation, listConversations } from "@indox/core";
 import { requireWorkspace } from "@/lib/session";
 import { isSameOrigin, csrfReject } from "@/lib/csrf";
 

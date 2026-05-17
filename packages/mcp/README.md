@@ -87,3 +87,18 @@ The MCP process reads `DATABASE_URL` and `OPENAI_API_KEY` from `.env`.
 That file is symlinked from `packages/web/.env` so the engine sees the
 same secrets in dev. For self-hosted deployments, set env vars directly
 or mount your own `.env` next to `dist/stdio.js`.
+
+Over **stdio** there is no Authorization header, so the server falls
+back to `INDOX_TOKEN` from the process env. Grab a token from
+`/dashboard/mcp` and pass it in the agent's MCP `env` block, e.g. in
+`claude_desktop_config.json`:
+
+```json
+"env": {
+  "DATABASE_URL": "...",
+  "OPENAI_API_KEY": "...",
+  "INDOX_TOKEN": "indox_..."
+}
+```
+
+Over HTTP, send it as `Authorization: Bearer indox_...` instead.

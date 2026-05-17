@@ -3,6 +3,7 @@
 // by repo URL).
 
 import prisma from "./db";
+import { logger } from "./logger";
 import type { Adapter, Source } from "../prisma/generated/client";
 import type { IndexStatus, SyncStatus, SourceMetadata } from "./adapters/types";
 
@@ -48,7 +49,7 @@ export async function markSourceRunning(sourceId: string) {
 export async function markSourceReady(
   sourceId: string,
   chunkCount: number,
-  metadata: SourceMetadata,
+  metadata: SourceMetadata
 ) {
   await prisma.source.update({
     where: { id: sourceId },
@@ -72,11 +73,50 @@ export async function markSourceFailed(sourceId: string, error: string) {
   });
 }
 
+// Reset adapter/source rows whose status is "running" but whose updatedAt is
+// older than `maxRunningMinutes`. This catches the case where the worker
+// process was SIGKILLed mid-job (OOM, container restart, deploy) — pg-boss's
+// own retry will eventually re-pick the job, but our row would otherwise stay
+// in "running" forever, leaving the reindex button disabled in the UI.
+//
+// updatedAt is bumped by every mark*() call, so for a *live* sync the row
+// looks fresh. The default 60 min threshold gives ample headroom for genuine
+// large-repo indexing while still rescuing crashed jobs within an hour.
+//
+// Called from the worker's startup path and from the dashboard data loader so
+// users always see a recoverable state, not a stuck one.
+export async function recoverStuckIndexing(maxRunningMinutes = 60): Promise<{
+  sources: number;
+  adapters: number;
+}> {
+  const cutoff = new Date(Date.now() - maxRunningMinutes * 60_000);
+  const reason = `worker did not finish within ${maxRunningMinutes}m — likely crashed mid-job`;
+
+  const [sources, adapters] = await Promise.all([
+    prisma.source.updateMany({
+      where: { indexStatus: "running", updatedAt: { lt: cutoff } },
+      data: { indexStatus: "failed" satisfies IndexStatus, indexError: reason },
+    }),
+    prisma.adapter.updateMany({
+      where: { syncStatus: "running", updatedAt: { lt: cutoff } },
+      data: { syncStatus: "failed" satisfies SyncStatus, syncError: reason },
+    }),
+  ]);
+
+  if (sources.count > 0 || adapters.count > 0) {
+    logger.info(
+      "recover",
+      `reset ${sources.count} source(s) and ${adapters.count} adapter(s) from stuck running state`
+    );
+  }
+  return { sources: sources.count, adapters: adapters.count };
+}
+
 // ─── upsert sources from enumerate() output ──────────────────────────────────
 
 export async function upsertSources(
   adapter: Adapter,
-  enumerated: Array<{ externalId: string; displayName: string; metadata: SourceMetadata }>,
+  enumerated: Array<{ externalId: string; displayName: string; metadata: SourceMetadata }>
 ): Promise<Source[]> {
   // Use a transaction so removal + insert is atomic per adapter.
   return prisma.$transaction(async (tx) => {
@@ -119,20 +159,20 @@ export async function upsertSources(
 
 export async function replaceSourceEmbeddings(
   sourceId: string,
-  rows: { chunkText: string; chunkUrl: string; vector: number[] }[],
+  rows: { chunkText: string; chunkUrl: string; vector: number[] }[]
 ) {
   await prisma.embedding.deleteMany({ where: { sourceId } });
   await Promise.all(
     rows.map((r) => {
       const vec = `[${r.vector.join(",")}]`;
       return prisma.$executeRawUnsafe(
-        `INSERT INTO embeddings (source_id, chunk_text, chunk_url, embedding) VALUES ($1, $2, $3, $4::vector)`,
+        `INSERT INTO embeddings (source_id, chunk_text, chunk_url, embedding) VALUES ($1, $2, $3, $4::halfvec)`,
         sourceId,
         r.chunkText,
         r.chunkUrl,
-        vec,
+        vec
       );
-    }),
+    })
   );
 }
 
@@ -152,7 +192,7 @@ export async function listSources(
     // Restrict to a single workspace, or a set (MCP tokens can carry many).
     workspaceId?: string;
     workspaceIds?: string[];
-  } = {},
+  } = {}
 ) {
   const workspaceFilter =
     opts.workspaceId !== undefined
@@ -186,7 +226,7 @@ export async function listAdaptersByWorkspace(workspaceId: string) {
 
 export async function addSourceToAdapter(
   adapterId: string,
-  enumerated: { externalId: string; displayName: string; metadata: SourceMetadata },
+  enumerated: { externalId: string; displayName: string; metadata: SourceMetadata }
 ): Promise<Source> {
   return prisma.$transaction(async (tx) => {
     const adapter = await tx.adapter.findUnique({ where: { id: adapterId } });
@@ -208,40 +248,63 @@ export async function addSourceToAdapter(
       },
     });
 
-    // Keep the adapter's scope in sync. We canonicalise to repos-mode so the
-    // user can keep tweaking the source list one at a time without losing
-    // any previously selected entries on the next full sync.
     const allSources = await tx.source.findMany({
       where: { adapterId },
       select: { externalId: true },
     });
-    const repoList = allSources.map((s) => s.externalId);
+    const externalIds = allSources.map((s) => s.externalId);
     await tx.adapter.update({
       where: { id: adapterId },
-      data: {
-        scope: { mode: "repos", value: repoList } as object,
-      },
+      data: { scope: nextScopeForKind(adapter.kind, adapter.scope, externalIds) as object },
     });
 
     return source;
   });
 }
 
-export async function removeSourceFromAdapter(sourceId: string): Promise<{ adapterId: string } | null> {
+// Keep the adapter's scope row consistent with reality so a future full re-sync
+// (driver.enumerate → parseScope) operates on the same set the user picked
+// one-by-one via the manage page. Mode depends on the adapter kind:
+//   github: `repos`-mode
+//   notion: `pages`-mode — unless the user explicitly chose `search`, in which
+//           case leave it alone (search means "everything accessible"; manual
+//           adds are still allowed, but they shouldn't downgrade to an allowlist).
+function nextScopeForKind(
+  kind: string,
+  currentScope: unknown,
+  externalIds: string[]
+): { mode: string; value?: unknown } {
+  if (kind === "notion") {
+    const cur = currentScope as { mode?: string } | null;
+    if (cur?.mode === "search") return { mode: "search" };
+    return { mode: "pages", value: externalIds };
+  }
+  // default + github: canonicalise to repos-mode
+  return { mode: "repos", value: externalIds };
+}
+
+export async function removeSourceFromAdapter(
+  sourceId: string
+): Promise<{ adapterId: string } | null> {
   return prisma.$transaction(async (tx) => {
     const source = await tx.source.findUnique({ where: { id: sourceId } });
     if (!source) return null;
     await tx.source.delete({ where: { id: sourceId } });
 
+    const adapter = await tx.adapter.findUnique({ where: { id: source.adapterId } });
     const remaining = await tx.source.findMany({
       where: { adapterId: source.adapterId },
       select: { externalId: true },
     });
-    const repoList = remaining.map((s) => s.externalId);
+    const externalIds = remaining.map((s) => s.externalId);
     await tx.adapter.update({
       where: { id: source.adapterId },
       data: {
-        scope: { mode: "repos", value: repoList } as object,
+        scope: nextScopeForKind(
+          adapter?.kind ?? "github",
+          adapter?.scope,
+          externalIds
+        ) as object,
       },
     });
 
