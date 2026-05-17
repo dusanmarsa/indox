@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { WorkspaceSwitcher, type WorkspaceOption } from "./WorkspaceSwitcher";
 
 const NAV_SECTIONS = [
   {
@@ -24,11 +25,19 @@ const NAV_SECTIONS = [
   },
 ];
 
-export function DashSidebar() {
+export function DashSidebar({
+  activeWorkspaceId,
+  workspaces,
+}: {
+  activeWorkspaceId: string;
+  workspaces: WorkspaceOption[];
+}) {
   const pathname = usePathname();
 
   return (
-    <aside className="flex w-[196px] shrink-0 flex-col overflow-y-auto border-r border-(--indox-border) bg-(--indox-surface) py-4">
+    <aside className="flex w-[196px] shrink-0 flex-col overflow-y-auto border-r border-(--indox-border) bg-(--indox-surface) py-1">
+      <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} />
+
       {NAV_SECTIONS.map((section) => (
         <div key={section.label} className="mb-1">
           <p className="px-4 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.1em] text-(--indox-dim)">

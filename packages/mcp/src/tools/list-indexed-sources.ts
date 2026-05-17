@@ -31,10 +31,21 @@ export default async function listIndexedSourcesTool({
   const auth = await authenticate();
   if (isAuthFailure(auth)) return auth;
 
+  if (auth.workspaceIds.length === 0) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: "This token has no accessible workspaces. Create one in the indox dashboard, or rotate your token.",
+        },
+      ],
+    };
+  }
+
   const filter = status ?? "ready";
   const sources = await listSources({
     readyOnly: filter === "ready",
-    ownerKey: auth.userId,
+    workspaceIds: auth.workspaceIds,
   });
   const filtered = filter === "any" || filter === "ready"
     ? sources

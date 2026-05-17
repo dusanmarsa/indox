@@ -1,5 +1,5 @@
 import { listConversations } from "@indox/core";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 import ChatSidebar from "@/components/chat/Sidebar";
 
 export default async function ChatLayout({
@@ -7,8 +7,11 @@ export default async function ChatLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const ownerKey = await requireOwnerKey();
-  const conversations = await listConversations(ownerKey, 50);
+  const { user, workspace } = await requireWorkspace();
+  const conversations = await listConversations(
+    { workspaceId: workspace.id, userId: user.id },
+    50,
+  );
 
   return (
     <div className="flex min-h-screen">

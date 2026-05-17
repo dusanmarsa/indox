@@ -12,11 +12,7 @@ datasource db {
 // what to ingest. Each adapter exposes one or more Sources.
 model Adapter {
   id            String    @id @default(cuid())
-  // Same shape as Conversation.ownerKey — the `indox_session` cookie today,
-  // a real user id when auth lands. Pre-existing rows from before this column
-  // existed are tagged with the legacy sentinel "" so they remain visible to
-  // an admin path but not to anonymous sessions.
-  ownerKey      String    @map("owner_key") @default("")
+  workspaceId   String    @map("workspace_id")
   kind          String    // "github" | "confluence" | …
   authIdentity  String?   @map("auth_identity")  // e.g. Confluence email; null for GitHub PAT
   // AES-256-GCM ciphertext prefixed with `enc:v1:` (see core/src/crypto.ts).
@@ -29,9 +25,10 @@ model Adapter {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   sources       Source[]
 
-  @@index([ownerKey])
+  @@index([workspaceId])
   @@map("adapters")
 }
 
@@ -76,20 +73,23 @@ model Embedding {
   @@map("embeddings")
 }
 
-// Anonymous chat history. `ownerKey` is whatever opaque identifier the caller
-// uses to scope conversations to a single user — currently the value of the
-// `indox_session` cookie set by the web app on first visit. When real auth
-// lands, the same column stores the user id instead; nothing else changes.
+// Chat history. Scoped to a workspace and to a user within it — for Tier 1
+// these are always the workspace owner, but the userId column is here from
+// the start so per-member private history works without a migration when
+// Tier 2 (shared workspaces) ships.
 model Conversation {
-  id        String   @id @default(cuid())
-  ownerKey  String   @map("owner_key")
-  title     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  userId      String   @map("user_id")
+  title       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
+  workspace Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  ConversationMessage[]
 
-  @@index([ownerKey, updatedAt])
+  @@index([workspaceId, userId, updatedAt])
   @@map("conversations")
 }
 
@@ -123,24 +123,98 @@ model UsageLog {
 // camelCase here because better-auth's Prisma adapter reads them that way;
 // the actual SQL columns are lowercased via @map where noted.
 
-// `mcpToken` is our addition — a long random secret the user copies into
-// their MCP client config (Cursor/Claude). The MCP server resolves it back
-// to this user.id and scopes every tool call to that owner.
-
 model User {
   id            String    @id @default(cuid())
   name          String?
   email         String    @unique
   emailVerified Boolean   @default(false) @map("email_verified")
   image         String?
-  mcpToken      String?   @unique @map("mcp_token")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  sessions Session[]
-  accounts Account[]
+  sessions      Session[]
+  accounts      Account[]
+  workspaces    Workspace[]
+  workspaceTokens WorkspaceToken[]
+  conversations Conversation[]
 
   @@map("users")
+}
+
+// A Workspace is a tenant boundary: it groups adapters, sources, MCP tokens,
+// and chat history. Today each workspace has exactly one owner (Tier 1).
+// When shared workspaces ship, a separate WorkspaceMember join table is added
+// — purely additive, no migration of existing rows.
+model Workspace {
+  id        String   @id @default(cuid())
+  ownerId   String   @map("owner_id")
+  name      String
+  // Stable URL-safe identifier. Unique globally so /w/<slug> routes don't
+  // need an owner segment. Owner can change this from settings.
+  slug      String   @unique
+  // When true, /w/<slug> serves chat to anonymous visitors. The chat route
+  // skips the session check and rate-limits per (workspaceId, ip).
+  isPublic  Boolean  @default(false) @map("is_public")
+  // AES-256-GCM ciphertext prefixed with `enc:v1:` (see core/src/crypto.ts).
+  // When set on a public workspace, chat completions hit OpenAI with this
+  // key instead of the platform key. Null = use platform key (with a much
+  // stricter rate limit).
+  openaiApiKeyEncrypted String? @map("openai_api_key_encrypted")
+  // Chat completion model. Validated in app against a small allowlist;
+  // non-default values require BYO key on a public workspace.
+  model     String   @default("gpt-4o-mini")
+  // Hard daily ceiling on chat calls for this workspace, counted across
+  // all callers. Owner can raise/lower from settings.
+  dailyCallLimit Int @default(200) @map("daily_call_limit")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner         User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  adapters      Adapter[]
+  conversations Conversation[]
+  usage         WorkspaceUsage[]
+
+  @@index([ownerId])
+  @@map("workspaces")
+}
+
+// Daily call counters per (workspace, ip). Used to enforce dailyCallLimit
+// and per-ip throttles on public workspaces. Old rows can be pruned by a
+// cron job; the schema doesn't enforce TTL.
+model WorkspaceUsage {
+  workspaceId String   @map("workspace_id")
+  ip          String
+  date        DateTime @db.Date
+  count       Int      @default(0)
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, ip, date])
+  @@index([workspaceId, date])
+  @@map("workspace_usage")
+}
+
+// A bearer token a user copies into their MCP client config. Replaces the
+// previous `User.mcpToken` column. A token implicitly grants access to every
+// workspace the issuing user owns; setting `workspaceIds` narrows it to a
+// subset (future scoping feature, the schema is ready). Stored plaintext for
+// O(1) lookup on every MCP call — see the rationale in the old mcp-token.ts.
+model WorkspaceToken {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  token        String   @unique
+  label        String?
+  // Empty array = "all workspaces this user owns". Non-empty = restrict to
+  // these workspace ids. The MCP resolver enforces the user-ownership check
+  // on top, so a token can never reach a workspace its issuer doesn't own.
+  workspaceIds String[] @default([]) @map("workspace_ids")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("workspace_tokens")
 }
 
 model Session {

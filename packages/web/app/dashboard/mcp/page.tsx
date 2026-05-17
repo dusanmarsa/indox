@@ -1,5 +1,5 @@
-import { getOrCreateMcpToken } from "@indox/core";
-import { requireOwnerKey } from "@/lib/session";
+import { getOrCreatePersonalToken } from "@indox/core";
+import { requireUser } from "@/lib/session";
 import McpTokenPanel from "@/components/dashboard/McpTokenPanel";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +11,8 @@ const MCP_URL =
   "https://mcp-production-4dae.up.railway.app/mcp";
 
 export default async function McpPage() {
-  const userId = await requireOwnerKey();
-  const token = await getOrCreateMcpToken(userId);
+  const user = await requireUser();
+  const token = await getOrCreatePersonalToken(user.id);
 
   return (
     <div>

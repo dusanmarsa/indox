@@ -8,7 +8,7 @@ import {
   logger,
   encryptToken,
 } from "@indox/core";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 import { isSameOrigin, csrfReject } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
@@ -21,9 +21,9 @@ const createAdapterSchema = z.object({
 });
 
 export async function GET() {
-  const ownerKey = await requireOwnerKey();
+  const { workspace } = await requireWorkspace();
   const adapters = await prisma.adapter.findMany({
-    where: { ownerKey },
+    where: { workspaceId: workspace.id },
     orderBy: { createdAt: "asc" },
     take: 200,
     include: { sources: { select: { id: true, indexStatus: true } } },
@@ -33,7 +33,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   if (!isSameOrigin(req)) return csrfReject();
-  const ownerKey = await requireOwnerKey();
+  const { workspace } = await requireWorkspace();
 
   const body = await req.json().catch(() => null);
   const parsed = createAdapterSchema.safeParse(body);
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
   const adapter = await prisma.adapter.create({
     data: {
-      ownerKey,
+      workspaceId: workspace.id,
       kind,
       authIdentity: authIdentity ?? null,
       token: encryptToken(token),

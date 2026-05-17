@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { getAdapter } from "@indox/core";
+import { getAdapter, listUserWorkspaces } from "@indox/core";
 import AdapterManager from "@/components/dashboard/AdapterManager";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +11,11 @@ export default async function AdapterDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const ownerKey = await requireOwnerKey();
+  const { user, workspace } = await requireWorkspace();
   const adapter = await getAdapter(id);
-  // Render 404 for adapters not owned by the caller so the management page
-  // can't be used to enumerate other sessions' adapter ids.
-  if (!adapter || adapter.ownerKey !== ownerKey) notFound();
+  // Render 404 for adapters outside the active workspace so this page can't
+  // be used to enumerate other workspaces' adapter ids.
+  if (!adapter || adapter.workspaceId !== workspace.id) notFound();
 
   const dto = {
     id: adapter.id,
@@ -32,6 +32,12 @@ export default async function AdapterDetailPage({
     })),
   };
 
+  // Other workspaces this user owns — used by the "copy adapter to…" menu.
+  const all = await listUserWorkspaces(user.id);
+  const otherWorkspaces = all
+    .filter((w) => w.id !== workspace.id)
+    .map((w) => ({ id: w.id, name: w.name }));
+
   return (
     <div>
       <div className="mb-9">
@@ -40,7 +46,7 @@ export default async function AdapterDetailPage({
           {adapter.kind} · {adapter.sources.length} source{adapter.sources.length === 1 ? "" : "s"}
         </p>
       </div>
-      <AdapterManager adapter={dto} />
+      <AdapterManager adapter={dto} otherWorkspaces={otherWorkspaces} />
     </div>
   );
 }

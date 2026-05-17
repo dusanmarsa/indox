@@ -2,11 +2,11 @@ export const dynamic = "force-dynamic";
 
 import { getDashboardAdapters } from "@/lib/dashboard-data";
 import AdaptersList from "@/components/dashboard/AdaptersList";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 
 export default async function AdaptersPage() {
-  const ownerKey = await requireOwnerKey();
-  const adapters = await getDashboardAdapters(ownerKey);
+  const { workspace } = await requireWorkspace();
+  const adapters = await getDashboardAdapters(workspace.id);
 
   return (
     <div>

@@ -17,7 +17,10 @@ function isProtected(pathname: string): boolean {
     pathname.startsWith("/api/adapters") ||
     pathname.startsWith("/api/sources") ||
     pathname.startsWith("/api/conversations") ||
-    pathname === "/api/chat" ||
+    pathname.startsWith("/api/workspaces") ||
+    // /api/chat is intentionally NOT gated here — it serves both authed
+    // and public (workspaceSlug) traffic. The route itself handles the
+    // unauthed-without-slug case.
     pathname === "/api/mcp-token"
   );
 }

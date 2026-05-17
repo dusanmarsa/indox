@@ -2,18 +2,24 @@ import {
   createConversation,
   listConversations,
 } from "@indox/core";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 import { isSameOrigin, csrfReject } from "@/lib/csrf";
 
 export async function GET() {
-  const ownerKey = await requireOwnerKey();
-  const conversations = await listConversations(ownerKey);
+  const { user, workspace } = await requireWorkspace();
+  const conversations = await listConversations({
+    workspaceId: workspace.id,
+    userId: user.id,
+  });
   return Response.json({ conversations });
 }
 
 export async function POST(req: Request) {
   if (!isSameOrigin(req)) return csrfReject();
-  const ownerKey = await requireOwnerKey();
-  const conv = await createConversation(ownerKey);
+  const { user, workspace } = await requireWorkspace();
+  const conv = await createConversation({
+    workspaceId: workspace.id,
+    userId: user.id,
+  });
   return Response.json({ conversation: conv });
 }

@@ -26,9 +26,9 @@ function estimateSize(chunkCount: number | null): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export async function getDashboardStats(ownerKey: string) {
-  // UsageLog is still IP-keyed and global; everything else scopes by owner.
-  const ownerSourceWhere = { adapter: { ownerKey } };
+export async function getDashboardStats(workspaceId: string) {
+  // UsageLog is still IP-keyed and global; everything else scopes by workspace.
+  const workspaceSourceWhere = { adapter: { workspaceId } };
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -47,14 +47,14 @@ export async function getDashboardStats(ownerKey: string) {
     yesterdayUsage,
     adapterCount,
   ] = await Promise.all([
-    prisma.source.count({ where: { indexStatus: "ready", ...ownerSourceWhere } }),
-    prisma.source.count({ where: { indexStatus: "ready", indexedAt: { lt: weekAgo }, ...ownerSourceWhere } }),
+    prisma.source.count({ where: { indexStatus: "ready", ...workspaceSourceWhere } }),
+    prisma.source.count({ where: { indexStatus: "ready", indexedAt: { lt: weekAgo }, ...workspaceSourceWhere } }),
     prisma.source.aggregate({
-      where: { indexStatus: "ready", ...ownerSourceWhere },
+      where: { indexStatus: "ready", ...workspaceSourceWhere },
       _sum: { chunkCount: true },
     }),
     prisma.source.aggregate({
-      where: { indexStatus: "ready", indexedAt: { lt: weekAgo }, ...ownerSourceWhere },
+      where: { indexStatus: "ready", indexedAt: { lt: weekAgo }, ...workspaceSourceWhere },
       _sum: { chunkCount: true },
     }),
     prisma.usageLog.aggregate({
@@ -65,7 +65,7 @@ export async function getDashboardStats(ownerKey: string) {
       where: { date: { gte: yesterdayStart, lt: todayStart } },
       _sum: { queryCount: true },
     }),
-    prisma.adapter.count({ where: { ownerKey } }),
+    prisma.adapter.count({ where: { workspaceId } }),
   ]);
 
   const totalChunks = chunkSum._sum.chunkCount ?? 0;
@@ -109,9 +109,9 @@ export type DashboardSource = {
   displayName: string;
 };
 
-export async function getDashboardSources(ownerKey: string, limit?: number): Promise<DashboardSource[]> {
+export async function getDashboardSources(workspaceId: string, limit?: number): Promise<DashboardSource[]> {
   const sources = await prisma.source.findMany({
-    where: { adapter: { ownerKey } },
+    where: { adapter: { workspaceId } },
     orderBy: [{ indexStatus: "asc" }, { indexedAt: "desc" }],
     ...(limit ? { take: limit } : {}),
     include: { adapter: true },
@@ -135,9 +135,9 @@ export type SourceFile = { path: string; chunks: number };
 // Pulls distinct file paths for a source from its embeddings. Uses chunk_url
 // (a SHA-pinned blob link with #L1-L10 fragment) and strips it back to a
 // repo-relative path. GitHub-only today; other adapters can override.
-export async function getSourceFiles(sourceId: string, ownerKey: string): Promise<SourceFile[]> {
+export async function getSourceFiles(sourceId: string, workspaceId: string): Promise<SourceFile[]> {
   const ok = await prisma.source.findFirst({
-    where: { id: sourceId, adapter: { ownerKey } },
+    where: { id: sourceId, adapter: { workspaceId } },
     select: { id: true },
   });
   if (!ok) return [];
@@ -166,9 +166,9 @@ export type DashboardAdapter = {
   readyCount: number;
 };
 
-export async function getDashboardAdapters(ownerKey: string): Promise<DashboardAdapter[]> {
+export async function getDashboardAdapters(workspaceId: string): Promise<DashboardAdapter[]> {
   const adapters = await prisma.adapter.findMany({
-    where: { ownerKey },
+    where: { workspaceId },
     orderBy: { createdAt: "asc" },
     include: { sources: { select: { indexStatus: true } } },
   });

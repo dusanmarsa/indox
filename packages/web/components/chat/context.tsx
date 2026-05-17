@@ -26,10 +26,18 @@ const ChatContext = createContext<ChatContextValue | null>(null);
 export function ChatProvider({
   conversationId: initialConversationId,
   initialMessages = [],
+  // When set, this provider runs in "public" mode: every chat send tags
+  // the body with workspaceSlug, no conversation is minted, and source
+  // discovery comes from `initialSources` (the public route can't call
+  // /api/sources, which is auth-gated).
+  publicWorkspaceSlug,
+  initialSources,
   children,
 }: {
   conversationId?: string;
   initialMessages?: UIMessage[];
+  publicWorkspaceSlug?: string;
+  initialSources?: ChatSource[];
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -37,6 +45,7 @@ export function ChatProvider({
   const [conversationId, setConversationId] = useState<string | null>(
     initialConversationId ?? null,
   );
+  const isPublic = !!publicWorkspaceSlug;
   // When this turn started on a brand-new conversation, refresh the sidebar
   // after the stream completes so the new entry — now with a derived title —
   // shows up. Ref instead of state because we don't want to trigger renders.
@@ -58,8 +67,10 @@ export function ChatProvider({
     },
   });
 
-  const [sources, setSources] = useState<ChatSource[]>([]);
+  const [sources, setSources] = useState<ChatSource[]>(initialSources ?? []);
   useEffect(() => {
+    // Public mode skips the fetch — the server already passed sources in.
+    if (isPublic) return;
     let cancelled = false;
     fetch("/api/sources")
       .then((r) => r.json())
@@ -70,19 +81,20 @@ export function ChatProvider({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isPublic]);
 
   const isStreaming = status === "streaming" || status === "submitted";
 
   const append = async (content: string, sourceIds?: string[]) => {
     if (isStreaming) stop();
 
-    // Lazily mint the conversation on the very first send. Updating the URL
-    // via history.replaceState (instead of router.push) keeps the React tree
-    // alive — important, since we're mid-send and a real navigation would
-    // unmount useChat and drop the in-flight message.
     let id = conversationId;
-    if (!id) {
+    // Authed mode: lazily mint the conversation on the very first send.
+    // `history.replaceState` (instead of router.push) keeps the React tree
+    // alive — a real navigation would unmount useChat and drop the
+    // in-flight message. Public mode skips this — public chats are
+    // ephemeral, no persisted history per visitor.
+    if (!id && !isPublic) {
       try {
         const res = await fetch("/api/conversations", { method: "POST" });
         const { conversation } = (await res.json()) as {
@@ -101,6 +113,7 @@ export function ChatProvider({
     const body: Record<string, unknown> = {};
     if (id) body.conversationId = id;
     if (sourceIds && sourceIds.length) body.sourceIds = sourceIds;
+    if (publicWorkspaceSlug) body.workspaceSlug = publicWorkspaceSlug;
 
     sendMessage(
       { text: content },

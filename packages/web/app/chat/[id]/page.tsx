@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import type { UIMessage } from "ai";
 import { getConversation } from "@indox/core";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 import { ChatProvider } from "@/components/chat/context";
 import ChatArea from "@/components/chat/Area";
 import ChatInput from "@/components/chat/Input";
@@ -12,8 +12,8 @@ export default async function ChatConversationPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const ownerKey = await requireOwnerKey();
-  const conv = await getConversation(id, ownerKey);
+  const { user, workspace } = await requireWorkspace();
+  const conv = await getConversation(id, { workspaceId: workspace.id, userId: user.id });
   if (!conv) notFound();
 
   // Persisted `parts` round-trip as JSON — re-tag as UIMessage so the chat

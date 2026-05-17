@@ -27,10 +27,20 @@ type AvailableRepo = {
   indexed: boolean;
 };
 
-export default function AdapterManager({ adapter }: { adapter: AdapterDto }) {
+type WorkspaceOption = { id: string; name: string };
+
+export default function AdapterManager({
+  adapter,
+  otherWorkspaces,
+}: {
+  adapter: AdapterDto;
+  otherWorkspaces: WorkspaceOption[];
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
   // ─── browse repos ─────────────────────────────────────────────────────────
   const [browseMode, setBrowseMode] = useState<"user" | "org">("user");
@@ -115,6 +125,27 @@ export default function AdapterManager({ adapter }: { adapter: AdapterDto }) {
     }
   };
 
+  const copyToWorkspace = async (targetWorkspaceId: string, targetName: string) => {
+    setCopyOpen(false);
+    setError(null);
+    setBusy("copy");
+    setCopyMsg(null);
+    try {
+      const res = await fetch(`/api/adapters/${adapter.id}/copy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetWorkspaceId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "copy failed");
+      setCopyMsg(`Copied to "${targetName}" — sync started in that workspace.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const reindex = async (id: string) => {
     setBusy(id);
     setError(null);
@@ -144,10 +175,43 @@ export default function AdapterManager({ adapter }: { adapter: AdapterDto }) {
       <section className="border border-(--indox-border)">
         <div className="flex items-center justify-between border-b border-(--indox-border) bg-(--indox-surface) px-[18px] py-[13px]">
           <span className="text-[13px] font-medium">Indexed sources</span>
-          <span className="font-mono text-[11px] text-(--indox-dim)">
-            {adapter.sources.length}
-          </span>
+          <div className="flex items-center gap-4">
+            {otherWorkspaces.length > 0 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setCopyOpen((v) => !v)}
+                  disabled={busy === "copy"}
+                  className="font-mono text-[11px] text-(--indox-muted) transition-colors hover:text-foreground disabled:opacity-40"
+                >
+                  {busy === "copy" ? "copying…" : "copy to workspace ▾"}
+                </button>
+                {copyOpen && (
+                  <div className="absolute right-0 top-[calc(100%+4px)] z-20 min-w-[180px] border border-(--indox-border) bg-background shadow-md">
+                    {otherWorkspaces.map((w) => (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => copyToWorkspace(w.id, w.name)}
+                        className="block w-full px-3 py-[7px] text-left font-mono text-[12px] text-foreground transition-colors hover:bg-muted/60"
+                      >
+                        {w.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <span className="font-mono text-[11px] text-(--indox-dim)">
+              {adapter.sources.length}
+            </span>
+          </div>
         </div>
+        {copyMsg && (
+          <div className="border-b border-(--indox-ok)/30 bg-(--indox-ok)/5 px-[18px] py-[8px] font-mono text-[11px] text-(--indox-ok)">
+            {copyMsg}
+          </div>
+        )}
         {adapter.sources.length === 0 ? (
           <div className="px-[18px] py-12 text-center font-mono text-[12px] text-(--indox-dim)">
             no sources yet — add one below

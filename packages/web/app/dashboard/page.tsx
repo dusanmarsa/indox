@@ -8,7 +8,7 @@ import {
   getRecentQueries,
   getActivityData,
 } from "@/lib/dashboard-data";
-import { requireOwnerKey } from "@/lib/session";
+import { requireWorkspace } from "@/lib/session";
 
 function StatusBadge({ status }: { status: "ok" | "warn" | "idle" }) {
   const map = {
@@ -26,10 +26,10 @@ function StatusBadge({ status }: { status: "ok" | "warn" | "idle" }) {
 }
 
 export default async function DashboardOverview() {
-  const ownerKey = await requireOwnerKey();
+  const { workspace } = await requireWorkspace();
   const [stats, sources, queries, activity] = await Promise.all([
-    getDashboardStats(ownerKey),
-    getDashboardSources(ownerKey, 5),
+    getDashboardStats(workspace.id),
+    getDashboardSources(workspace.id, 5),
     getRecentQueries(),
     getActivityData(),
   ]);

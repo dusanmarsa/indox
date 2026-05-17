@@ -1,9 +1,11 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { resolveActiveWorkspace, type WorkspaceSummary } from "@indox/core";
 import { auth, type Session } from "./auth";
 
-// `ownerKey` columns on Adapter/Conversation hold the User.id directly,
-// so getOwnerKey and getUserId are the same call — keeping both names
-// to make ownership-scoped code read like English.
+// Cookie that pins the user's active workspace across requests. Read in
+// `requireWorkspace`, written by /api/workspaces/active. Httponly so client
+// JS can't tamper; SameSite=Lax so it survives normal navigation.
+export const ACTIVE_WORKSPACE_COOKIE = "indox_workspace";
 
 export async function getSession(): Promise<Session | null> {
   return auth.api.getSession({ headers: await headers() });
@@ -19,12 +21,20 @@ export async function requireUser(): Promise<Session["user"]> {
   return user;
 }
 
-export async function getOwnerKey(): Promise<string | null> {
-  return (await getUser())?.id ?? null;
-}
-
-export async function requireOwnerKey(): Promise<string> {
-  return (await requireUser()).id;
+// Resolves the currently-active workspace for the authenticated user.
+// Reads `indox_workspace` cookie; falls back to the user's first owned
+// workspace, auto-creating Default when they have none. A stale cookie
+// (workspace deleted / not owned) is silently ignored — the fallback path
+// kicks in and the next /api/workspaces/active call resets the cookie.
+export async function requireWorkspace(): Promise<{
+  user: Session["user"];
+  workspace: WorkspaceSummary;
+}> {
+  const user = await requireUser();
+  const jar = await cookies();
+  const activeId = jar.get(ACTIVE_WORKSPACE_COOKIE)?.value ?? null;
+  const workspace = await resolveActiveWorkspace(user.id, activeId);
+  return { user, workspace };
 }
 
 // API routes catch this and return 401; proxy.ts redirects browsers to /login.

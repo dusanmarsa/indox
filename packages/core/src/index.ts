@@ -46,12 +46,50 @@ export {
   upsertSources,
   replaceSourceEmbeddings,
   listAdapters,
-  listAdaptersByOwner,
+  listAdaptersByWorkspace,
   listSources,
   addSourceToAdapter,
   removeSourceFromAdapter,
   getAdapter,
 } from "./source-index";
+
+// ─── workspaces ───────────────────────────────────────────────────────────────
+export {
+  listUserWorkspaces,
+  resolveActiveWorkspace,
+  ensureDefaultWorkspace,
+  getOwnedWorkspace,
+  createWorkspace,
+  deleteWorkspace,
+  copyAdapterToWorkspace,
+  slugify,
+  type WorkspaceSummary,
+  type CreateWorkspaceResult,
+  type DeleteWorkspaceResult,
+  type CopyAdapterResult,
+} from "./workspaces";
+
+export {
+  ALLOWED_MODELS,
+  DEFAULT_MODEL,
+  isAllowedModel,
+  modelRequiresByoKey,
+  validateSlug,
+  getWorkspaceSettings,
+  updateWorkspaceSettings,
+  getWorkspaceBySlug,
+  type AllowedModel,
+  type WorkspaceSettings,
+  type UpdateWorkspaceSettings,
+  type UpdateResult,
+  type PublicWorkspaceContext,
+} from "./workspace-settings";
+
+export {
+  checkAndIncrementWorkspaceUsage,
+  getWorkspaceUsageToday,
+  type RateLimitDecision,
+} from "./workspace-rate-limit";
 
 // ─── sync orchestration ───────────────────────────────────────────────────────
 export { syncAdapter, syncSource } from "./sync";
@@ -75,9 +113,13 @@ export { encryptToken, decryptToken, isEncrypted } from "./crypto";
 // ─── MCP tokens ───────────────────────────────────────────────────────────────
 export {
   generateMcpToken,
-  rotateMcpToken,
-  getOrCreateMcpToken,
+  createToken,
+  getOrCreatePersonalToken,
+  rotatePersonalToken,
+  listUserTokens,
+  deleteToken,
   resolveMcpToken,
+  type ResolvedToken,
 } from "./mcp-token";
 
 // ─── job queue ────────────────────────────────────────────────────────────────
