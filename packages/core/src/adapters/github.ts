@@ -8,23 +8,33 @@ import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import type { Adapter, Source } from "../../prisma/generated/client";
 import { logger } from "../logger";
-import { chunkFile, makeTreeChunk, shouldIndex, type CodeChunk } from "../chunker";
+import {
+  chunkContent,
+  defaultShape,
+  shouldIndex,
+  type Chunk,
+  type ContentItem,
+  type ContentShape,
+} from "../chunker";
+// tree-sitter is loaded lazily inside indexSource() so the web bundle (which
+// only does retrieval) never pulls web-tree-sitter + 30+ grammar WASMs into
+// its dependency graph. Turbopack would otherwise auto-externalize
+// web-tree-sitter and warn on the `.wasm` subpath require.
+type TreeSitterModule = typeof import("../tree-sitter");
 import { replaceSourceEmbeddings } from "../source-index";
 import { decryptToken } from "../crypto";
-import type {
-  AdapterDriver,
-  EnumeratedSource,
-  GithubScope,
-  GithubSourceMetadata,
-} from "./types";
+import type { AdapterDriver, EnumeratedSource, GithubScope, GithubSourceMetadata } from "./types";
 
-const embeddingModel = openai.embedding("text-embedding-3-small");
+// text-embedding-3-large at full 3072 dims. Must match the model used by
+// hybridSearch — query and corpus vectors have to live in the same
+// embedding space. Stored as halfvec(3072) (see schema.prisma).
+const embeddingModel = openai.embedding("text-embedding-3-large");
 const EMBED_BATCH = 64;
 const MAX_CHUNKS = 4000;
 const EMBED_MAX_RETRIES = 10;
 const TPM_BUDGET = 800_000;
 const CHARS_PER_TOKEN = 4;
-// text-embedding-3-small hard-rejects inputs over 8192 tokens. The chunker's
+// text-embedding-3-large hard-rejects inputs over 8192 tokens. The chunker's
 // 60-line code window is normally fine but blows up on minified or single-line
 // files (giant JSON literals, generated bundles, base64 blobs). Clip to a
 // conservative char budget — code can be denser than the 4 chars/token guess.
@@ -91,7 +101,7 @@ async function ghListRepos(token: string, basePath: string): Promise<GithubRepoR
 // the adapter's whole scope.
 export async function resolveGithubRepo(
   token: string,
-  fullName: string,
+  fullName: string
 ): Promise<EnumeratedSource> {
   const [owner, name] = fullName.split("/");
   if (!owner || !name) throw new Error(`bad repo spec "${fullName}", expected owner/name`);
@@ -111,11 +121,9 @@ export async function resolveGithubRepo(
 // adapter in user/org mode. Returns lightweight rows for selection.
 export async function listGithubRepos(
   token: string,
-  scope: { mode: "user" | "org"; value: string },
+  scope: { mode: "user" | "org"; value: string }
 ): Promise<Array<{ fullName: string; defaultBranch: string; private: boolean }>> {
-  const path = scope.mode === "user"
-    ? `/users/${scope.value}/repos`
-    : `/orgs/${scope.value}/repos`;
+  const path = scope.mode === "user" ? `/users/${scope.value}/repos` : `/orgs/${scope.value}/repos`;
   const rows = await ghListRepos(token, path);
   return rows.map((r) => ({
     fullName: r.full_name,
@@ -137,12 +145,11 @@ async function enumerate(adapter: Adapter): Promise<EnumeratedSource[]> {
         const [owner, name] = full.split("/");
         if (!owner || !name) throw new Error(`bad repo spec "${full}", expected owner/name`);
         return ghGetRepo(token, owner, name);
-      }),
+      })
     );
   } else {
-    const basePath = scope.mode === "user"
-      ? `/users/${scope.value}/repos`
-      : `/orgs/${scope.value}/repos`;
+    const basePath =
+      scope.mode === "user" ? `/users/${scope.value}/repos` : `/orgs/${scope.value}/repos`;
     rows = await ghListRepos(token, basePath);
   }
 
@@ -163,7 +170,7 @@ async function fetchZip(
   token: string,
   owner: string,
   name: string,
-  defaultBranch: string,
+  defaultBranch: string
 ): Promise<{ zip: Uint8Array; sha: string }> {
   const url = `https://api.github.com/repos/${owner}/${name}/zipball/${defaultBranch}`;
   const res = await fetch(url, {
@@ -172,9 +179,42 @@ async function fetchZip(
   });
   if (!res.ok) throw new Error(`zip download failed: ${res.status} ${res.statusText}`);
   const shaMatch = res.url.match(/\/([0-9a-f]{40})(?:\.zip)?$/i);
-  const sha = shaMatch ? shaMatch[1] : res.url.split("/").pop() ?? "unknown";
+  const sha = shaMatch ? shaMatch[1] : (res.url.split("/").pop() ?? "unknown");
   const buf = new Uint8Array(await res.arrayBuffer());
   return { zip: buf, sha };
+}
+
+// GitHub blob URL pattern. The chunker doesn't know about this — every
+// adapter is responsible for how its citations link.
+function blobUrl(
+  repoFullName: string,
+  sha: string,
+  path: string,
+  range?: { start: number; end: number },
+): string {
+  const base = `https://github.com/${repoFullName}/blob/${sha}/${path}`;
+  return range ? `${base}#L${range.start}-L${range.end}` : base;
+}
+
+// A small per-repo "table of contents" chunk. Helps retrieval answer
+// "where does X live" without needing a semantic hit on every file
+// individually. Adapter-owned because the URL pattern is GitHub-specific.
+function makeRepoTreeItem(
+  repoFullName: string,
+  sha: string,
+  paths: string[],
+): ContentItem {
+  const sorted = [...paths].sort();
+  const capped =
+    sorted.length > 500 ? [...sorted.slice(0, 500), `…(+${sorted.length - 500} more)`] : sorted;
+  return {
+    sourceUri: `github://${repoFullName}@${sha}/(tree)`,
+    displayPath: "(tree)",
+    headerPrefix: `github.com/${repoFullName}`,
+    shape: "blob",
+    body: capped.join("\n"),
+    citationUrl: () => `https://github.com/${repoFullName}/tree/${sha}`,
+  };
 }
 
 function extractChunks(
@@ -182,13 +222,15 @@ function extractChunks(
   name: string,
   sha: string,
   zip: Uint8Array,
-): CodeChunk[] {
+  ts: TreeSitterModule
+): Chunk[] {
   const fullName = `${owner}/${name}`;
+  const headerPrefix = `github.com/${fullName}`;
   const files = unzipSync(zip, { filter: (f) => !f.name.endsWith("/") });
   const entries = Object.entries(files);
   const prefix = entries.length ? entries[0][0].split("/")[0] + "/" : "";
 
-  const chunks: CodeChunk[] = [];
+  const chunks: Chunk[] = [];
   const indexedPaths: string[] = [];
 
   for (const [entryName, data] of entries) {
@@ -203,7 +245,37 @@ function extractChunks(
       continue;
     }
     indexedPaths.push(path);
-    for (const c of chunkFile(fullName, sha, path, content)) {
+
+    // Pick the content shape from the file's path (extension/basename
+    // heuristics). For code files, parse once with tree-sitter to extract
+    // boundaries + symbols + imports the chunker can use. The tree-sitter
+    // dep stays in the indexer; the chunker only sees plain data.
+    const shape: ContentShape = defaultShape(path);
+    let codeStructure: ReturnType<TreeSitterModule["parseStructure"]> | null = null;
+    if (shape === "code") {
+      const dot = path.lastIndexOf(".");
+      const fileExt = dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
+      const lang = ts.langForExt(fileExt);
+      codeStructure = lang ? ts.parseStructure(content, lang) : null;
+    }
+
+    const item: ContentItem = {
+      sourceUri: `github://${fullName}@${sha}/${path}`,
+      displayPath: path,
+      headerPrefix,
+      shape,
+      body: content,
+      codeStructure: codeStructure
+        ? {
+            boundaries: codeStructure.boundaries,
+            symbols: codeStructure.symbols,
+            imports: codeStructure.imports,
+          }
+        : undefined,
+      citationUrl: (range) => blobUrl(fullName, sha, path, range),
+    };
+
+    for (const c of chunkContent(item)) {
       if (c.text.length > MAX_CHUNK_CHARS) {
         c.text = c.text.slice(0, MAX_CHUNK_CHARS) + "\n…(truncated)";
       }
@@ -216,11 +288,11 @@ function extractChunks(
     }
   }
 
-  chunks.unshift(makeTreeChunk(fullName, sha, indexedPaths));
+  chunks.unshift(...chunkContent(makeRepoTreeItem(fullName, sha, indexedPaths)));
   return chunks;
 }
 
-async function embedChunks(chunks: CodeChunk[]): Promise<number[][]> {
+async function embedChunks(chunks: Chunk[]): Promise<number[][]> {
   const vectors: number[][] = new Array(chunks.length);
   const window: { at: number; tokens: number }[] = [];
 
@@ -252,7 +324,7 @@ async function embedChunks(chunks: CodeChunk[]): Promise<number[][]> {
 
 async function indexSource(
   adapter: Adapter,
-  source: Source,
+  source: Source
 ): Promise<{ chunkCount: number; metadata: GithubSourceMetadata }> {
   const meta = source.metadata as GithubSourceMetadata | null;
   if (!meta?.owner || !meta?.name || !meta?.defaultBranch) {
@@ -260,19 +332,29 @@ async function indexSource(
   }
 
   logger.info("github", `indexing ${meta.owner}/${meta.name}@${meta.defaultBranch}`);
-  const { zip, sha } = await fetchZip(decryptToken(adapter.token), meta.owner, meta.name, meta.defaultBranch);
-  const chunks = extractChunks(meta.owner, meta.name, sha, zip);
+  const ts = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "../tree-sitter");
+  await ts.preloadParsers();
+  const { zip, sha } = await fetchZip(
+    decryptToken(adapter.token),
+    meta.owner,
+    meta.name,
+    meta.defaultBranch
+  );
+  const chunks = extractChunks(meta.owner, meta.name, sha, zip, ts);
   const vectors = await embedChunks(chunks);
 
   await replaceSourceEmbeddings(
     source.id,
     chunks.map((c, i) => ({
       chunkText: c.text,
-      chunkUrl: c.chunkUrl,
+      chunkUrl: c.url,
       vector: vectors[i],
-    })),
+    }))
   );
-  logger.info("github", `persisted ${chunks.length} embeddings for ${meta.owner}/${meta.name}@${sha.slice(0, 7)}`);
+  logger.info(
+    "github",
+    `persisted ${chunks.length} embeddings for ${meta.owner}/${meta.name}@${sha.slice(0, 7)}`
+  );
 
   return {
     chunkCount: chunks.length,

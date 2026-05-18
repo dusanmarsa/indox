@@ -1,7 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Label,
+  Pill,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch,
+} from "@indox/ui";
 
 type Settings = {
   id: string;
@@ -14,6 +31,24 @@ type Settings = {
 };
 
 type ApiError = { error: string; field?: string };
+
+type SlugState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "ok" }
+  | { kind: "taken"; reason: string };
+
+// Slugify lifted from common patterns: lowercase, ascii-fold-ish, strip
+// anything not [a-z0-9], collapse runs of `-`, trim edges.
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
 
 export function WorkspaceSettingsForm({
   settings,
@@ -42,7 +77,11 @@ export function WorkspaceSettingsForm({
   const [publicConfirm, setPublicConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [hasKey, setHasKey] = useState(settings.hasOpenaiKey);
-  const origin = typeof window !== "undefined" ? window.location.origin : null
+  // While true, typing into `name` auto-fills `slug`. Once the user edits the
+  // slug directly we stop overwriting, even if they later change the name.
+  const [autoSlug, setAutoSlug] = useState(settings.slug === slugify(settings.name));
+  const [slugState, setSlugState] = useState<SlugState>({ kind: "idle" });
+  const origin = typeof window !== "undefined" ? window.location.origin : null;
 
   const publicUrl = origin ? `${origin}/w/${form.slug}` : `/w/${form.slug}`;
 
@@ -51,6 +90,41 @@ export function WorkspaceSettingsForm({
   const modelNeedsKey = form.model !== "gpt-4o-mini";
   const willHaveKey = form.openaiApiKey === null ? false : form.openaiApiKey ? true : hasKey;
   const modelInvalid = modelNeedsKey && !willHaveKey;
+
+  // Debounced slug availability check. Skips the request when the slug hasn't
+  // changed from the originally-saved one (always-available no-op).
+  const slugCheckSeq = useRef(0);
+  const checkSlug = useCallback(
+    (slug: string) => {
+      if (!slug || slug === settings.slug) {
+        setSlugState({ kind: "idle" });
+        return;
+      }
+      const seq = ++slugCheckSeq.current;
+      setSlugState({ kind: "checking" });
+      const url = `/api/workspaces/slug-check?slug=${encodeURIComponent(slug)}&excludeId=${encodeURIComponent(settings.id)}`;
+      fetch(url)
+        .then((r) => r.json())
+        .then((data: { ok: boolean; reason?: string }) => {
+          if (seq !== slugCheckSeq.current) return;
+          setSlugState(
+            data.ok
+              ? { kind: "ok" }
+              : { kind: "taken", reason: data.reason ?? "Slug is unavailable." }
+          );
+        })
+        .catch(() => {
+          if (seq !== slugCheckSeq.current) return;
+          setSlugState({ kind: "idle" });
+        });
+    },
+    [settings.slug, settings.id]
+  );
+
+  useEffect(() => {
+    const t = setTimeout(() => checkSlug(form.slug), 350);
+    return () => clearTimeout(t);
+  }, [form.slug, checkSlug]);
 
   async function save(overrides: Partial<typeof form> = {}) {
     setSaving(true);
@@ -86,8 +160,6 @@ export function WorkspaceSettingsForm({
         });
         return;
       }
-      // Reflect the server's authoritative view (it may have re-validated
-      // and snapped the model back to default, etc.).
       const fresh = data.settings as Settings;
       setForm({
         name: fresh.name,
@@ -120,110 +192,107 @@ export function WorkspaceSettingsForm({
         setError({ error: data?.error ?? "Delete failed." });
         return;
       }
-      router.push("/dashboard");
+      router.push("/");
       router.refresh();
     } finally {
       setSaving(false);
     }
   }
 
-  // ─── render helpers ────────────────────────────────────────────────────
-
   const max = willHaveKey ? 10_000 : 200;
   const maxLabel = willHaveKey ? "10,000" : "200";
 
   return (
-    <div className="space-y-8">
-      {/* ── basics ── */}
+    <div className="flex flex-col gap-8">
       <Section label="Workspace">
         <Row label="name">
-          <input
+          <Input
             value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="w-full border border-(--indox-border) bg-background px-2 py-[6px] font-mono text-[12px] text-foreground transition-colors focus:border-(--indox-muted) focus:outline-none"
+            onChange={(e) => {
+              const name = e.target.value;
+              setForm((f) => ({
+                ...f,
+                name,
+                slug: autoSlug ? slugify(name) : f.slug,
+              }));
+            }}
             maxLength={64}
           />
         </Row>
-        <Row label="slug" hint="Used in the public chat URL.">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[11px] text-(--indox-dim)">/w/</span>
-            <input
-              value={form.slug}
-              onChange={(e) =>
-                setForm({ ...form, slug: e.target.value.toLowerCase() })
-              }
-              className="flex-1 border border-(--indox-border) bg-background px-2 py-[6px] font-mono text-[12px] text-foreground transition-colors focus:border-(--indox-muted) focus:outline-none"
-              maxLength={48}
-              pattern="[a-z0-9-]+"
-            />
+        <Row label="slug" hint="Auto-derived from the name. Used in the public chat URL.">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[11px] text-ink-3">/w/</span>
+              <Input
+                value={form.slug}
+                onChange={(e) => {
+                  setAutoSlug(false);
+                  setForm({ ...form, slug: e.target.value.toLowerCase() });
+                }}
+                maxLength={48}
+                pattern="[a-z0-9-]+"
+                invalid={slugState.kind === "taken"}
+                className="flex-1"
+              />
+            </div>
+            <div className="min-h-[14px] font-mono text-[11px]">
+              {slugState.kind === "checking" && (
+                <span className="text-ink-3">checking availability…</span>
+              )}
+              {slugState.kind === "ok" && <span className="text-ok">available</span>}
+              {slugState.kind === "taken" && <span className="text-bad">{slugState.reason}</span>}
+              {slugState.kind === "idle" && form.slug === settings.slug && (
+                <span className="text-ink-3">current slug</span>
+              )}
+            </div>
           </div>
         </Row>
       </Section>
 
-      {/* ── public chat ── */}
       <Section
         label="Public chat"
-        hint="Lets anyone with the URL chat with this workspace's indexed sources. No login required."
+        hint="Lets anyone with the URL chat with this workspace's indexed sources."
       >
         <Row label="enabled">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[12px] text-(--indox-muted)">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-mono text-[12px] text-ink-2">
               {form.isPublic ? "anyone with the URL can chat" : "private — only you"}
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                if (!form.isPublic) {
-                  // Going public is irreversible-ish — make them confirm.
-                  setPublicConfirm(true);
-                } else {
-                  save({ isPublic: false });
-                  setForm({ ...form, isPublic: false });
-                }
-              }}
-              className={`border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.08em] transition-colors ${
-                form.isPublic
-                  ? "border-(--indox-accent) bg-(--indox-accent)/10 text-(--indox-accent)"
-                  : "border-(--indox-border) text-(--indox-muted) hover:border-(--indox-muted)"
-              }`}
-            >
-              {form.isPublic ? "public" : "private"}
-            </button>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={form.isPublic}
+                onCheckedChange={(next) => {
+                  if (next) {
+                    setPublicConfirm(true);
+                  } else {
+                    save({ isPublic: false });
+                    setForm({ ...form, isPublic: false });
+                  }
+                }}
+              />
+              {form.isPublic && <Pill tone="ok">public</Pill>}
+            </div>
           </div>
         </Row>
         {form.isPublic && (
           <Row label="url">
-            <div className="flex items-center gap-2">
-              <code className="flex-1 truncate border border-(--indox-border) bg-background px-2 py-[5px] font-mono text-[11.5px] text-foreground">
-                {publicUrl}
-              </code>
-              <button
-                type="button"
-                onClick={() => navigator.clipboard.writeText(publicUrl)}
-                className="border border-(--indox-border) px-2 py-[5px] font-mono text-[11px] text-(--indox-muted) transition-colors hover:border-(--indox-muted) hover:text-foreground"
-              >
-                copy
-              </button>
-            </div>
+            <Input value={publicUrl} readOnly copyable className="font-mono text-[12px]" />
           </Row>
         )}
       </Section>
 
-      {/* ── BYO key + model ── */}
       <Section
         label="Model & key"
-        hint="Bring your own OpenAI key so public chat traffic runs on your billing. Without a key, public chats use the platform default at a much lower rate limit."
+        hint="Bring your own OpenAI key so public chat traffic runs on your billing."
       >
         <Row label="openai key">
-          <div className="flex flex-col gap-1.5">
-            <input
+          <div className="flex flex-col gap-2">
+            <Input
               type="password"
+              revealable
               placeholder={hasKey ? "•••• stored — type to replace" : "sk-…"}
               value={form.openaiApiKey ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, openaiApiKey: e.target.value || "" })
-              }
-              className="w-full border border-(--indox-border) bg-background px-2 py-[6px] font-mono text-[12px] text-foreground transition-colors focus:border-(--indox-muted) focus:outline-none"
+              onChange={(e) => setForm({ ...form, openaiApiKey: e.target.value || "" })}
               autoComplete="off"
               spellCheck={false}
             />
@@ -231,34 +300,35 @@ export function WorkspaceSettingsForm({
               <button
                 type="button"
                 onClick={() => setForm({ ...form, openaiApiKey: null })}
-                className="self-start font-mono text-[11px] text-(--indox-muted) underline-offset-2 hover:underline"
+                className="self-start font-mono text-[11px] text-ink-2 underline-offset-2 transition-colors hover:text-ink hover:underline"
               >
                 clear stored key
               </button>
             )}
             {form.openaiApiKey === null && (
-              <span className="font-mono text-[11px] text-(--indox-accent)">
+              <span className="font-mono text-[11px] text-brand">
                 Stored key will be cleared on save.
               </span>
             )}
           </div>
         </Row>
         <Row label="model">
-          <div className="flex flex-col gap-1.5">
-            <select
-              value={form.model}
-              onChange={(e) => setForm({ ...form, model: e.target.value })}
-              className="w-full border border-(--indox-border) bg-background px-2 py-[6px] font-mono text-[12px] text-foreground transition-colors focus:border-(--indox-muted) focus:outline-none"
-            >
-              {allowedModels.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                  {m !== "gpt-4o-mini" ? "  (BYO key)" : ""}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-col gap-2">
+            <Select value={form.model} onValueChange={(model) => setForm({ ...form, model })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {allowedModels.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                    {m !== "gpt-4o-mini" ? "  (BYO key)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {modelInvalid && (
-              <span className="font-mono text-[11px] text-(--indox-accent)">
+              <span className="font-mono text-[11px] text-bad">
                 This model requires a BYO key. Add one above first.
               </span>
             )}
@@ -266,72 +336,60 @@ export function WorkspaceSettingsForm({
         </Row>
       </Section>
 
-      {/* ── limits ── */}
-      <Section
-        label="Rate limit"
-        hint={`${usageToday} / ${form.dailyCallLimit} chat calls today.`}
-      >
+      <Section label="Rate limit" hint={`${usageToday} / ${form.dailyCallLimit} chat calls today.`}>
         <Row label="daily limit">
           <div className="flex items-center gap-3">
-            <input
+            <Input
               type="number"
               min={10}
               max={max}
               value={form.dailyCallLimit}
-              onChange={(e) =>
-                setForm({ ...form, dailyCallLimit: Number(e.target.value) || 10 })
-              }
-              className="w-28 border border-(--indox-border) bg-background px-2 py-[6px] font-mono text-[12px] text-foreground transition-colors focus:border-(--indox-muted) focus:outline-none"
+              onChange={(e) => setForm({ ...form, dailyCallLimit: Number(e.target.value) || 10 })}
+              className="w-28"
             />
-            <span className="font-mono text-[11px] text-(--indox-dim)">
-              max {maxLabel}
-            </span>
+            <span className="font-mono text-[11px] text-ink-3">max {maxLabel}</span>
           </div>
         </Row>
       </Section>
 
-      {/* ── actions ── */}
-      <div className="flex items-center gap-3 border-t border-(--indox-border) pt-5">
-        <button
-          type="button"
+      <div className="flex items-center gap-3 border-t border-border pt-5">
+        <Button
           onClick={() => save()}
-          disabled={saving || modelInvalid}
-          className="border border-(--indox-accent) bg-(--indox-accent)/10 px-4 py-[7px] font-mono text-[12px] text-(--indox-accent) transition-colors hover:bg-(--indox-accent)/15 disabled:opacity-50"
+          disabled={
+            saving || modelInvalid || slugState.kind === "taken" || slugState.kind === "checking"
+          }
         >
           {saving ? "saving…" : "save changes"}
-        </button>
-        {savedFlash && (
-          <span className="font-mono text-[11px] text-(--indox-ok)">saved ✓</span>
-        )}
+        </Button>
+        {savedFlash && <span className="font-mono text-[11px] text-ok">saved ✓</span>}
         {error && (
-          <span className="font-mono text-[11px] text-(--indox-accent)">
+          <span className="font-mono text-[11px] text-bad">
             {error.field ? `${error.field}: ` : ""}
             {error.error}
           </span>
         )}
       </div>
 
-      {/* ── danger zone ── */}
       <Section label="Danger zone" tone="warn">
         <Row label="delete workspace" hint="Removes adapters, sources, chat history, and tokens.">
-          <div className="flex flex-col gap-1.5">
-            <button
-              type="button"
+          <div className="flex flex-col gap-2">
+            <Button
+              variant={deleteConfirm ? "accent" : "soft"}
               onClick={onDelete}
               disabled={!canDelete || saving}
-              className="self-start border border-(--indox-border) px-3 py-[6px] font-mono text-[11px] uppercase tracking-[0.08em] text-(--indox-muted) transition-colors hover:border-(--indox-accent) hover:text-(--indox-accent) disabled:cursor-not-allowed disabled:opacity-50"
+              className="self-start"
             >
               {!canDelete
                 ? "can't delete only workspace"
                 : deleteConfirm
                   ? "click again to confirm"
                   : "delete workspace"}
-            </button>
+            </Button>
             {deleteConfirm && (
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(false)}
-                className="self-start font-mono text-[11px] text-(--indox-muted) underline-offset-2 hover:underline"
+                className="self-start font-mono text-[11px] text-ink-2 hover:text-ink"
               >
                 cancel
               </button>
@@ -340,19 +398,17 @@ export function WorkspaceSettingsForm({
         </Row>
       </Section>
 
-      {/* ── go-public confirmation modal ── */}
-      {publicConfirm && (
-        <PublicConfirmModal
-          slug={form.slug}
-          hasKey={willHaveKey}
-          onCancel={() => setPublicConfirm(false)}
-          onConfirm={() => {
-            setPublicConfirm(false);
-            save({ isPublic: true });
-            setForm({ ...form, isPublic: true });
-          }}
-        />
-      )}
+      <PublicConfirmDialog
+        open={publicConfirm}
+        slug={form.slug}
+        hasKey={willHaveKey}
+        onOpenChange={(open) => !open && setPublicConfirm(false)}
+        onConfirm={() => {
+          setPublicConfirm(false);
+          save({ isPublic: true });
+          setForm({ ...form, isPublic: true });
+        }}
+      />
     </div>
   );
 }
@@ -370,21 +426,17 @@ function Section({
 }) {
   return (
     <div
-      className={`border ${
-        tone === "warn"
-          ? "border-(--indox-accent)/30"
-          : "border-(--indox-border)"
-      }`}
+      className={`overflow-hidden rounded-md border ${
+        tone === "warn" ? "border-bad/40" : "border-border"
+      } bg-surface`}
     >
-      <div className="flex items-baseline justify-between gap-3 border-b border-(--indox-border) bg-(--indox-surface) px-[18px] py-[11px]">
-        <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-(--indox-dim)">
+      <div className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-3">
+        <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
           {label}
         </span>
-        {hint && (
-          <span className="text-right font-mono text-[10.5px] text-(--indox-dim)">{hint}</span>
-        )}
+        {hint && <span className="text-right font-mono text-[10.5px] text-ink-3">{hint}</span>}
       </div>
-      <div className="divide-y divide-(--indox-border)">{children}</div>
+      <div className="divide-y divide-border">{children}</div>
     </div>
   );
 }
@@ -399,62 +451,54 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-4 px-[18px] py-[14px]">
-      <div className="w-[140px] shrink-0 pt-1">
-        <p className="font-mono text-[12px] text-(--indox-muted)">{label}</p>
-        {hint && (
-          <p className="mt-0.5 font-mono text-[10.5px] text-(--indox-dim)">{hint}</p>
-        )}
+    <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-start sm:gap-4">
+      <div className="pt-0.5 sm:w-[140px] sm:shrink-0 sm:pt-1.5">
+        <Label>{label}</Label>
+        {hint && <p className="mt-1 font-mono text-[10.5px] text-ink-3">{hint}</p>}
       </div>
-      <div className="flex-1">{children}</div>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
 
-function PublicConfirmModal({
+function PublicConfirmDialog({
+  open,
   slug,
   hasKey,
-  onCancel,
+  onOpenChange,
   onConfirm,
 }: {
+  open: boolean;
   slug: string;
   hasKey: boolean;
-  onCancel: () => void;
+  onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[460px] border border-(--indox-border) bg-background p-6">
-        <h2 className="mb-3 text-[15px] font-semibold">Make this workspace public?</h2>
-        <p className="mb-3 font-mono text-[12px] leading-[1.6] text-(--indox-muted)">
-          Anyone with the URL <code className="text-foreground">/w/{slug}</code> will be
-          able to chat with everything indexed in this workspace. Their queries
-          will reach your indexed code and docs through the chat interface — no
-          login required.
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[460px]">
+        <DialogHeader>
+          <DialogTitle>Make this workspace public?</DialogTitle>
+        </DialogHeader>
+        <p className="font-mono text-[12px] leading-[1.6] text-ink-2">
+          Anyone with the URL <code className="text-ink">/w/{slug}</code> will be able to chat with
+          everything indexed in this workspace. No login required.
         </p>
         {!hasKey && (
-          <p className="mb-3 border border-(--indox-accent)/30 bg-(--indox-accent)/5 p-2.5 font-mono text-[11.5px] leading-[1.6] text-(--indox-accent)">
-            ⚠ No BYO OpenAI key set — public traffic will run on the platform key
-            at a strict daily ceiling. Add a key if you expect any real volume.
+          <p className="rounded-md border border-warn/40 bg-warn/10 p-3 font-mono text-[11.5px] leading-[1.6] text-warn">
+            ⚠ No BYO OpenAI key set — public traffic will run on the platform key at a strict daily
+            ceiling.
           </p>
         )}
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="border border-(--indox-border) px-3 py-[6px] font-mono text-[11px] text-(--indox-muted) hover:border-(--indox-muted)"
-          >
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
             cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="border border-(--indox-accent) bg-(--indox-accent)/10 px-3 py-[6px] font-mono text-[11px] text-(--indox-accent) hover:bg-(--indox-accent)/15"
-          >
+          </Button>
+          <Button variant="accent" onClick={onConfirm}>
             make public
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

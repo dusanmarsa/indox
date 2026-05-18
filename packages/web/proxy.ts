@@ -5,24 +5,32 @@ import { NextResponse, type NextRequest } from "next/server";
 // via getUser(). The point here is to skip running expensive code for
 // obviously-unauthed requests, not to authenticate.
 
-const SESSION_COOKIE_NAMES = [
-  "better-auth.session_token",
-  "__Secure-better-auth.session_token",
-];
+const SESSION_COOKIE_NAMES = ["better-auth.session_token", "__Secure-better-auth.session_token"];
+
+// Dashboard now owns the root path. Everything except the public surfaces
+// below is gated.
+const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PREFIXES = ["/w/", "/api/auth/"];
 
 function isProtected(pathname: string): boolean {
-  if (pathname.startsWith("/dashboard")) return true;
+  if (PUBLIC_PATHS.includes(pathname)) return false;
+  if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return false;
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return true;
-  return (
-    pathname.startsWith("/api/adapters") ||
-    pathname.startsWith("/api/sources") ||
-    pathname.startsWith("/api/conversations") ||
-    pathname.startsWith("/api/workspaces") ||
-    // /api/chat is intentionally NOT gated here — it serves both authed
-    // and public (workspaceSlug) traffic. The route itself handles the
-    // unauthed-without-slug case.
-    pathname === "/api/mcp-token"
-  );
+  // /api/chat is intentionally NOT gated here — it serves both authed
+  // and public (workspaceSlug) traffic. The route itself handles the
+  // unauthed-without-slug case.
+  if (pathname === "/api/chat") return false;
+  if (pathname.startsWith("/api/")) {
+    return (
+      pathname.startsWith("/api/adapters") ||
+      pathname.startsWith("/api/sources") ||
+      pathname.startsWith("/api/conversations") ||
+      pathname.startsWith("/api/workspaces") ||
+      pathname === "/api/mcp-token"
+    );
+  }
+  // Everything else under root is dashboard.
+  return true;
 }
 
 export function proxy(req: NextRequest) {

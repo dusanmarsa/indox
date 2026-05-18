@@ -17,8 +17,20 @@ export type AuthFailure = {
 };
 
 export async function authenticate(): Promise<Authed | AuthFailure> {
-  const raw = headers()?.authorization;
-  const header = Array.isArray(raw) ? raw[0] : raw;
+  // HTTP transport: bearer comes from the Authorization header.
+  // stdio transport: there is no request context, so headers() throws —
+  // fall back to INDOX_TOKEN from the process env so local agents
+  // (Claude Code/Desktop) can authenticate via their MCP env block.
+  let header: string | undefined;
+  try {
+    const raw = headers()?.authorization;
+    header = Array.isArray(raw) ? raw[0] : raw;
+  } catch {
+    // No HTTP context (stdio). Fall through to env lookup below.
+  }
+  if (!header && process.env.INDOX_TOKEN) {
+    header = `Bearer ${process.env.INDOX_TOKEN}`;
+  }
   if (!header || typeof header !== "string" || !header.toLowerCase().startsWith("bearer ")) {
     return fail("Missing bearer token. Get one from /dashboard/mcp.");
   }

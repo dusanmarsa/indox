@@ -64,3 +64,9 @@ yarn-error.log*
 
 # XMCP build artifacts
 packages/mcp/.xmcp
+
+# Storybook
+packages/ui/storybook-static
+
+# Evals
+evals/runs/

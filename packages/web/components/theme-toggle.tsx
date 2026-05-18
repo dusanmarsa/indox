@@ -8,7 +8,7 @@ function useIsClient() {
   return useSyncExternalStore(
     () => () => {},
     () => true,
-    () => false,
+    () => false
   );
 }
 

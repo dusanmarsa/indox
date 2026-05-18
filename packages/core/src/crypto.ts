@@ -21,7 +21,7 @@ function getKey(): Buffer {
   if (!raw || raw.length < 16) {
     throw new Error(
       "ADAPTER_TOKEN_KEY is missing or too short (need ≥16 chars). " +
-      "Generate one with `openssl rand -hex 32`.",
+        "Generate one with `openssl rand -hex 32`."
     );
   }
   cachedKey = createHash("sha256").update(raw).digest();

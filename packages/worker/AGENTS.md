@@ -13,22 +13,42 @@ pg-boss (Postgres)
 
 ## src/index.ts
 
-1. `getBoss()` — pg-boss instance using `DATABASE_URL_UNPOLLED` if set, else `DATABASE_URL`.
-2. `await boss.start()`.
-3. `boss.work(QUEUE_SYNC_ADAPTER, ...)` and `boss.work(QUEUE_SYNC_SOURCE, ...)`.
-4. Handlers call into core and let errors propagate — pg-boss retries per its policy.
-5. `SIGINT` / `SIGTERM` → `boss.stop()` for graceful drain.
+1. `recoverStuckIndexing()` — sweep any `Source` / `Adapter` rows left
+   `"running"` by a previous SIGKILLed / OOM'd worker. Without this, the
+   dashboard's "re-index" button would stay disabled forever for those rows.
+2. `getBoss()` — pg-boss instance using `DATABASE_URL_UNPOLLED` if set, else
+   `DATABASE_URL`.
+3. `await boss.start()`.
+4. `boss.work(QUEUE_SYNC_ADAPTER, ...)` and `boss.work(QUEUE_SYNC_SOURCE, ...)`.
+   Each pickup logs `picked up … (job <jobId>)`; the web side logs
+   `enqueued source sync <id> as job <jobId>` so the trail is correlatable
+   end-to-end.
+5. Handlers call into core and let errors propagate — pg-boss retries per its
+   policy.
+6. `SIGINT` / `SIGTERM` → `boss.stop()` for graceful drain.
+
+Imports are split across `@indox/core` subpaths:
+
+```ts
+import { logger } from "@indox/core/logger";
+import { recoverStuckIndexing } from "@indox/core/sources";
+import { getBoss, QUEUE_SYNC_*, ... } from "@indox/core/queue";
+import { syncAdapter, syncSource } from "@indox/core/sync";
+```
+
+`@indox/core/sync` is worker-only by design (it pulls in the chunker and
+adapter drivers); web is lint-forbidden from importing it.
 
 ---
 
 ## Environment
 
-| Variable                 | Purpose |
-|--------------------------|---------|
-| `DATABASE_URL`           | Prisma client inside `@indox/core` and pg-boss fallback. |
-| `DATABASE_URL_UNPOLLED`  | Optional. Set only if `DATABASE_URL` points at a transaction-pooler that strips `LISTEN/NOTIFY`. |
-| `OPENAI_API_KEY`         | `embedMany` calls during indexing. |
-| `ADAPTER_TOKEN_KEY`      | Decrypt adapter PATs at sync time. |
+| Variable                | Purpose                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`          | Prisma client inside `@indox/core` and pg-boss fallback.                                         |
+| `DATABASE_URL_UNPOLLED` | Optional. Set only if `DATABASE_URL` points at a transaction-pooler that strips `LISTEN/NOTIFY`. |
+| `OPENAI_API_KEY`        | `embedMany` calls during indexing.                                                               |
+| `ADAPTER_TOKEN_KEY`     | Decrypt adapter PATs at sync time.                                                               |
 
 In production, the platform provides these. Locally Bun auto-loads `./.env`
 when run from repo root.
@@ -72,5 +92,11 @@ Errors in a `boss.work` handler mark the job failed; pg-boss retries by its
 configured policy. Don't swallow errors — let them surface.
 
 `syncAdapter` / `syncSource` already update `Adapter.syncStatus` /
-`Source.indexStatus` to `FAILED` so the dashboard reflects failures before
-retries are exhausted.
+`Source.indexStatus` to `"failed"` so the dashboard reflects failures before
+pg-boss retries are exhausted.
+
+The case the `try/catch` inside `syncSource` can't cover — a SIGKILLed worker
+that never reaches `markSourceFailed` — is handled by the
+`recoverStuckIndexing()` sweep on the next worker startup (and on every
+dashboard render). Default threshold: rows `"running"` with `updatedAt` older
+than 60 minutes.

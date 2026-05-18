@@ -4,8 +4,7 @@ type ActivityChartProps = {
 };
 
 export function ActivityChart({ bars, xLabels }: ActivityChartProps) {
-
-  if(!bars || !xLabels) {
+  if (!bars || !xLabels) {
     return null;
   }
 
@@ -13,10 +12,10 @@ export function ActivityChart({ bars, xLabels }: ActivityChartProps) {
   const recent = 5;
 
   return (
-    <div className="mb-9 border border-(--indox-border)">
-      <div className="flex items-center justify-between border-b border-(--indox-border) bg-(--indox-surface) px-[18px] py-[13px]">
+    <div className="mb-9 border border-border">
+      <div className="flex items-center justify-between border-b border-border bg-surface px-[18px] py-[13px]">
         <span className="text-[13px] font-medium">query activity</span>
-        <span className="font-mono text-[11px] text-(--indox-dim)">last 30 days</span>
+        <span className="font-mono text-[11px] text-ink-3">last 30 days</span>
       </div>
       <div className="px-6 pb-4 pt-5">
         <div className="flex h-20 items-end gap-[3px]">
@@ -28,8 +27,8 @@ export function ActivityChart({ bars, xLabels }: ActivityChartProps) {
                 i === last
                   ? "opacity-70"
                   : i >= last - recent
-                    ? "bg-(--indox-muted)"
-                    : "bg-(--indox-border) hover:bg-(--indox-dim)",
+                    ? "bg-ink-2"
+                    : "bg-border hover:bg-ink-3",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -42,7 +41,7 @@ export function ActivityChart({ bars, xLabels }: ActivityChartProps) {
         </div>
         <div className="mt-1.5 flex justify-between">
           {xLabels.map((l) => (
-            <span key={l} className="font-mono text-[10px] text-(--indox-dim)">
+            <span key={l} className="font-mono text-[10px] text-ink-3">
               {l}
             </span>
           ))}

@@ -1,0 +1,417 @@
+[
+  {
+    "id": "P1-rrf-concept",
+    "profile": "P1",
+    "query": "how does reciprocal rank fusion combine vector and BM25 results",
+    "expected": {
+      "urls": ["GLOSSARY.md", "search/rrf.ts", "search/hybrid.ts"],
+      "confidence": "strong"
+    },
+    "paraphrases": [
+      "what is RRF and how is the score computed",
+      "explain the formula for merging two ranked retrieval lists"
+    ]
+  },
+  {
+    "id": "P1-vector-threshold",
+    "profile": "P1",
+    "query": "cosine distance cutoff for relevant vector matches",
+    "expected": {
+      "urls": ["search/hybrid.ts"],
+      "confidence": "strong"
+    }
+  },
+  {
+    "id": "P1-query-rewrite",
+    "profile": "P1",
+    "query": "how does indox rewrite user queries into code-shaped variants",
+    "expected": {
+      "urls": ["search/hybrid.ts", "search/rewrite.ts"],
+      "confidence": "strong"
+    }
+  },
+  {
+    "id": "P1-chunker",
+    "profile": "P1",
+    "query": "how are files split into chunks before embedding",
+    "expected": { "urls": ["chunker"], "confidence": "strong" }
+  },
+  {
+    "id": "P2-railway-502",
+    "profile": "P2",
+    "query": "Railway 502 application failed to respond port binding",
+    "expected": { "urls": ["packages/mcp/xmcp.config.ts"], "confidence": "strong" }
+  },
+  {
+    "id": "P2-prisma-migrate-deploy",
+    "profile": "P2",
+    "query": "how are database migrations applied on deploy",
+    "expected": { "urls": ["packages/web/railway.toml", "prisma"], "confidence": "strong" }
+  },
+  {
+    "id": "P2-worker-replicas",
+    "profile": "P2",
+    "query": "why does the worker run with a single replica",
+    "expected": { "urls": ["packages/worker/railway.toml"], "confidence": "strong" }
+  },
+  {
+    "id": "P3-token-storage",
+    "profile": "P3",
+    "query": "how are MCP bearer tokens hashed stored and scoped to a user",
+    "expected": { "urls": ["mcp-token.ts"], "confidence": "strong" }
+  },
+  {
+    "id": "P3-token-rotation",
+    "profile": "P3",
+    "query": "how do I rotate my MCP bearer token",
+    "expected": { "urls": ["mcp-token.ts", "McpTokenPanel"], "confidence": "strong" }
+  },
+  {
+    "id": "P3-adapter-token-encryption",
+    "profile": "P3",
+    "query": "are adapter credentials like GitHub PATs encrypted at rest",
+    "expected": { "urls": ["crypto.ts", "schema.prisma"], "confidence": "strong" }
+  },
+  {
+    "id": "P3-rate-limit",
+    "profile": "P3",
+    "query": "rate limiting on the API endpoints",
+    "expected": { "urls": ["ratelimit"], "confidence": "strong" }
+  },
+  {
+    "id": "P4-new-adapter-recipe",
+    "profile": "P4",
+    "query": "how do I add a new source adapter",
+    "expected": {
+      "urls": ["AGENTS.md", "adapters/registry.ts", "adapters/types.ts"],
+      "confidence": "strong"
+    }
+  },
+  {
+    "id": "P4-adapter-sync",
+    "profile": "P4",
+    "query": "how does the worker sync an adapter",
+    "expected": { "urls": ["sync.ts", "worker"], "confidence": "strong" }
+  },
+  {
+    "id": "P4-source-vs-adapter",
+    "profile": "P4",
+    "query": "difference between Adapter and Source models",
+    "expected": { "urls": ["schema.prisma", "source-index.ts"], "confidence": "strong" }
+  },
+  {
+    "id": "P5-pricing-absent",
+    "profile": "P5",
+    "query": "how much does indox cost per month",
+    "expected": { "urls": [], "confidence": "empty" }
+  },
+  {
+    "id": "P5-embedding-model",
+    "profile": "P5",
+    "query": "which OpenAI embedding model does indox use",
+    "expected": { "urls": ["GLOSSARY.md", "search/hybrid.ts"], "confidence": "strong" }
+  },
+  {
+    "id": "P5-sla-absent",
+    "profile": "P5",
+    "query": "what is the SLA and uptime guarantee",
+    "expected": { "urls": [], "confidence": "empty" }
+  },
+  {
+    "id": "P5-license",
+    "profile": "P5",
+    "query": "what license is indox released under",
+    "expected": { "urls": ["LICENSE", "README.md"], "confidence": "strong" }
+  },
+
+  {
+    "id": "R-free",
+    "profile": "R",
+    "query": "is it free",
+    "expected": { "urls": ["LICENSE", "README.md"], "confidence": "strong" },
+    "notes": "Real-user shorthand. Should land on the license / self-hostable framing."
+  },
+  {
+    "id": "X-open-source-ambiguous",
+    "profile": "X",
+    "query": "is this open source",
+    "expected": {
+      "urls": ["LICENSE"],
+      "confidence": "strong",
+      "multiSource": true
+    },
+    "notes": "Genuinely ambiguous across the user's indexed repos. Engine should surface LICENSE chunks from >1 source; an agent layer can then ask which repo."
+  },
+  {
+    "id": "R-private-repos",
+    "profile": "R",
+    "query": "can I index private repos?",
+    "expected": { "urls": ["github", "adapters", "README.md"], "confidence": "strong" }
+  },
+  {
+    "id": "R-sign-in",
+    "profile": "R",
+    "query": "how do i sign in",
+    "expected": { "urls": ["auth", "better-auth"], "confidence": "strong" }
+  },
+  {
+    "id": "R-lost-token",
+    "profile": "R",
+    "query": "lost my token what do i do",
+    "expected": { "urls": ["mcp-token.ts", "McpTokenPanel"], "confidence": "strong" },
+    "notes": "Real-user phrasing — fragment, no punctuation. The answer is 'rotate'."
+  },
+  {
+    "id": "R-stuck-indexing",
+    "profile": "R",
+    "query": "my repo has been indexing for ages",
+    "expected": { "urls": ["sync", "worker", "AGENTS.md"], "confidence": "strong" },
+    "notes": "Support-ticket framing. Engine should pull sync/worker context even without 'sync' keyword."
+  },
+  {
+    "id": "R-delete-account",
+    "profile": "R",
+    "query": "how do i delete my account",
+    "expected": { "urls": [], "confidence": "empty" },
+    "notes": "Genuinely absent — no account-deletion flow shipped. Engine should refuse."
+  },
+  {
+    "id": "R-offline",
+    "profile": "R",
+    "query": "does it work offline",
+    "expected": { "urls": [], "confidence": "empty" },
+    "notes": "Absent topic. README mentions OpenAI dep, so engine may hedge — that's the calibration question."
+  },
+  {
+    "id": "R-what-is-this",
+    "profile": "R",
+    "query": "what is this",
+    "expected": { "urls": ["README.md"], "confidence": "strong" },
+    "notes": "The vaguest plausible query. README headline should win."
+  },
+  {
+    "id": "X-explain-nontech-ambiguous",
+    "profile": "X",
+    "query": "explain this to a non technical person",
+    "expected": {
+      "urls": ["README.md", "GLOSSARY.md", "LICENSE"],
+      "confidence": "strong",
+      "multiSource": true
+    },
+    "notes": "Vague 'this' with multiple repos indexed. Engine should spread across sources."
+  },
+  {
+    "id": "R-github-token",
+    "profile": "R",
+    "query": "where do i put my github token",
+    "expected": { "urls": ["adapters", "dashboard", "github"], "confidence": "strong" }
+  },
+  {
+    "id": "R-chat-context",
+    "profile": "R",
+    "query": "how does the chat know about my repos",
+    "expected": { "urls": ["chat", "search", "hybrid"], "confidence": "strong" },
+    "notes": "Conceptual question framed as UX, not architecture."
+  },
+  {
+    "id": "R-typo-embedings",
+    "profile": "R",
+    "query": "how do embedings work",
+    "expected": { "urls": ["GLOSSARY.md", "search/hybrid.ts"], "confidence": "strong" },
+    "notes": "Typo. Vector retrieval should be robust; BM25 won't help. Tests vector recall on misspellings."
+  },
+  {
+    "id": "R-wtf-rrf",
+    "profile": "R",
+    "query": "wtf is rrf",
+    "expected": { "urls": ["GLOSSARY.md", "search/rrf.ts"], "confidence": "strong" },
+    "notes": "Real Slack-style framing. Acronym + slang."
+  },
+  {
+    "id": "R-cost-openai",
+    "profile": "R",
+    "query": "do i need an openai key",
+    "expected": { "urls": ["README.md", ".env.example"], "confidence": "strong" }
+  },
+  {
+    "id": "X-search-broken-ambiguous",
+    "profile": "X",
+    "query": "search is returning weird results",
+    "expected": {
+      "urls": ["search", "hybrid", "webSearchTool"],
+      "confidence": "strong",
+      "multiSource": true
+    },
+    "notes": "Multiple indexed repos implement 'search' (indox hybrid, validvision web search). Engine should surface candidates from each so the agent can disambiguate."
+  },
+
+  {
+    "id": "MT-rrf-followup",
+    "profile": "MT",
+    "history": [
+      { "role": "user", "content": "how does indox merge vector and bm25 results" },
+      { "role": "assistant", "content": "It uses Reciprocal Rank Fusion (RRF). Each retriever returns a ranked list; RRF scores items by 1/(k + rank) summed across lists, with k=60 by convention. Items high in both lists win." }
+    ],
+    "query": "and why 60?",
+    "resolvedQuery": "why is k set to 60 in reciprocal rank fusion",
+    "expected": { "urls": ["GLOSSARY.md", "search/rrf.ts"], "confidence": "strong" },
+    "notes": "Elliptical follow-up. Naive retrieval on 'and why 60?' is meaningless without history."
+  },
+  {
+    "id": "MT-stuck-which-package",
+    "profile": "MT",
+    "history": [
+      { "role": "user", "content": "my repo has been syncing for an hour" },
+      { "role": "assistant", "content": "Syncing is run by the worker process. Look at packages/worker — it picks up jobs from pg-boss and runs syncAdapter / syncSource from @indox/core." }
+    ],
+    "query": "where is that code",
+    "resolvedQuery": "where is syncAdapter and syncSource defined",
+    "expected": { "urls": ["sync.ts", "packages/worker"], "confidence": "strong" },
+    "notes": "Pronoun reference. 'that code' is meaningless without prior turn."
+  },
+  {
+    "id": "MT-cost-followup",
+    "profile": "MT",
+    "history": [
+      { "role": "user", "content": "what embedding model does indox use" },
+      { "role": "assistant", "content": "text-embedding-3-small from OpenAI, 1536-dim vectors. You bring your own OPENAI_API_KEY." }
+    ],
+    "query": "is it expensive",
+    "resolvedQuery": "how much does text-embedding-3-small cost",
+    "expected": { "urls": [], "confidence": "empty" },
+    "notes": "Follow-up about a topic the corpus doesn't cover. Pricing is OpenAI's, not indox's. Refusal expected even on resolved query."
+  },
+  {
+    "id": "MT-gitlab-followup",
+    "profile": "MT",
+    "history": [
+      { "role": "user", "content": "how do I connect a github repo" },
+      { "role": "assistant", "content": "Dashboard → Adapters → Add adapter → GitHub. Paste a PAT and pick repos. The worker enumerates and indexes." }
+    ],
+    "query": "and gitlab?",
+    "resolvedQuery": "how do I add a gitlab adapter",
+    "expected": { "urls": ["adapters/registry.ts", "README.md", "AGENTS.md"], "confidence": "weak" },
+    "notes": "GitLab adapter is on the v0.2 roadmap, not shipped. Engine should surface the 'how to add an adapter' docs as weak/contextual, not pretend gitlab exists."
+  },
+  {
+    "id": "MT-crash-recovery",
+    "profile": "MT",
+    "history": [
+      { "role": "user", "content": "how does the worker process indexing jobs" },
+      { "role": "assistant", "content": "It pulls from pg-boss, then calls syncAdapter or syncSource. Each job is a single repo enumeration + chunk + embed." }
+    ],
+    "query": "what if it dies halfway",
+    "resolvedQuery": "what happens if the worker crashes mid-indexing pg-boss retry",
+    "expected": { "urls": ["worker", "sync.ts", "pg-boss"], "confidence": "strong" },
+    "notes": "Hypothetical failure-mode question that depends on knowing 'it' = the worker."
+  },
+  {
+    "id": "S-scoped-indox-license",
+    "profile": "S",
+    "query": "what license",
+    "sourceName": "indox",
+    "expected": {
+      "urls": ["dusanmarsa/indox"],
+      "confidence": "strong",
+      "scopedTo": "indox"
+    },
+    "notes": "Explicit source filter — only indox/LICENSE should come back, never validvision's."
+  },
+  {
+    "id": "S-scoped-validvision-readme",
+    "profile": "S",
+    "query": "what does this project do",
+    "sourceName": "validvision",
+    "expected": {
+      "urls": ["dusanmarsa/validvision"],
+      "confidence": "strong",
+      "scopedTo": "validvision"
+    },
+    "notes": "Same vague query, different scope — proves the filter actually works."
+  },
+  {
+    "id": "S-scoped-indox-rrf",
+    "profile": "S",
+    "query": "rrf implementation",
+    "sourceName": "indox",
+    "expected": {
+      "urls": ["search/rrf.ts"],
+      "confidence": "strong",
+      "scopedTo": "indox"
+    }
+  },
+  {
+    "id": "N-named-indox-license",
+    "profile": "N",
+    "query": "what license does indox use",
+    "expected": {
+      "urls": ["dusanmarsa/indox/blob"],
+      "confidence": "strong",
+      "primarySource": "indox"
+    },
+    "notes": "User named the source inline. Engine should bias toward indox even without explicit filter."
+  },
+  {
+    "id": "N-named-validvision-stack",
+    "profile": "N",
+    "query": "what tech stack does validvision use",
+    "expected": {
+      "urls": ["dusanmarsa/validvision"],
+      "confidence": "strong",
+      "primarySource": "validvision"
+    }
+  },
+  {
+    "id": "N-named-indox-chunking",
+    "profile": "N",
+    "query": "how does indox chunk source files",
+    "expected": {
+      "urls": ["chunker"],
+      "confidence": "strong",
+      "primarySource": "indox"
+    }
+  },
+  {
+    "id": "MT-history-scopes-indox",
+    "profile": "MT",
+    "history": [
+      { "role": "user", "content": "im looking at the indox repo" },
+      { "role": "assistant", "content": "Sure — indox is a self-hostable code search MCP. What do you want to know?" }
+    ],
+    "query": "how does the search work",
+    "resolvedQuery": "how does indox hybrid search work",
+    "expected": {
+      "urls": ["search/hybrid.ts", "GLOSSARY.md"],
+      "confidence": "strong",
+      "primarySource": "indox"
+    },
+    "notes": "History established indox as the topic. Generic 'how does the search work' should bias toward indox, not validvision's web search tool."
+  },
+  {
+    "id": "MT-history-scopes-validvision",
+    "profile": "MT",
+    "history": [
+      { "role": "user", "content": "tell me about validvision" },
+      { "role": "assistant", "content": "validvision is a project for video analysis workflows built on Mastra agents." }
+    ],
+    "query": "how does the search work",
+    "resolvedQuery": "how does validvision web search workflow work",
+    "expected": {
+      "urls": ["dusanmarsa/validvision"],
+      "confidence": "strong",
+      "primarySource": "validvision"
+    },
+    "notes": "Same follow-up query, different conversational scope. Engine must invert its prior."
+  },
+  {
+    "id": "MT-show-code",
+    "profile": "MT",
+    "history": [
+      { "role": "user", "content": "explain how the vector relevance floor works" },
+      { "role": "assistant", "content": "There's a strict cutoff (cosine distance 0.5) and a relaxed one (0.65). Strong hits pass strict; weak hits sit between — surfaced only when no strong hits exist." }
+    ],
+    "query": "show me the code",
+    "resolvedQuery": "VECTOR_RELEVANCE_MAX_DISTANCE implementation hybrid.ts",
+    "expected": { "urls": ["search/hybrid.ts"], "confidence": "strong" }
+  }
+]

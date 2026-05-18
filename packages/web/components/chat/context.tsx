@@ -26,50 +26,67 @@ const ChatContext = createContext<ChatContextValue | null>(null);
 export function ChatProvider({
   conversationId: initialConversationId,
   initialMessages = [],
-  // When set, this provider runs in "public" mode: every chat send tags
-  // the body with workspaceSlug, no conversation is minted, and source
-  // discovery comes from `initialSources` (the public route can't call
-  // /api/sources, which is auth-gated).
   publicWorkspaceSlug,
   initialSources,
+  noUrlChange = false,
   children,
 }: {
   conversationId?: string;
   initialMessages?: UIMessage[];
   publicWorkspaceSlug?: string;
   initialSources?: ChatSource[];
+  noUrlChange?: boolean;
   children: React.ReactNode;
 }) {
   const router = useRouter();
   const [transport] = useState(() => new DefaultChatTransport({ api: "/api/chat" }));
   const [conversationId, setConversationId] = useState<string | null>(
-    initialConversationId ?? null,
+    initialConversationId ?? null
   );
   const isPublic = !!publicWorkspaceSlug;
-  // When this turn started on a brand-new conversation, refresh the sidebar
-  // after the stream completes so the new entry — now with a derived title —
-  // shows up. Ref instead of state because we don't want to trigger renders.
   const justCreatedRef = useRef(false);
+  const noUrlChangeRef = useRef(noUrlChange);
 
-  // Only pass `id` when we have one. `useChat` recreates the underlying Chat
-  // whenever `"id" in options` is true and the stored id doesn't match — and
-  // since it auto-generates an id when undefined, passing `id: undefined`
-  // triggers a recreate on every render, aborting any in-flight stream.
-  const { messages, sendMessage, status, stop } = useChat({
+  const { messages, sendMessage, status, stop, setMessages } = useChat({
     ...(initialConversationId ? { id: initialConversationId } : {}),
     messages: initialMessages,
     transport,
     onFinish: () => {
       if (justCreatedRef.current) {
         justCreatedRef.current = false;
-        router.refresh();
+        if (!noUrlChangeRef.current) {
+          router.refresh();
+        }
       }
     },
   });
 
+  const [anonSessionId] = useState<string | null>(() => {
+    if (!publicWorkspaceSlug) return null;
+    const storageKey = `indox:session:${publicWorkspaceSlug}`;
+    let sid = localStorage.getItem(storageKey);
+    if (!sid) {
+      sid = crypto.randomUUID();
+      localStorage.setItem(storageKey, sid);
+    }
+    return sid;
+  });
+
+  useEffect(() => {
+    if (!publicWorkspaceSlug || !anonSessionId) return;
+
+    fetch(`/api/w/${publicWorkspaceSlug}/history?sessionId=${encodeURIComponent(anonSessionId)}`)
+      .then((r) => (r.ok ? r.json() : { messages: [] }))
+      .then((data: { messages: UIMessage[] }) => {
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(data.messages);
+        }
+      })
+      .catch(() => {});
+  }, [publicWorkspaceSlug, anonSessionId, setMessages]);
+
   const [sources, setSources] = useState<ChatSource[]>(initialSources ?? []);
   useEffect(() => {
-    // Public mode skips the fetch — the server already passed sources in.
     if (isPublic) return;
     let cancelled = false;
     fetch("/api/sources")
@@ -89,11 +106,6 @@ export function ChatProvider({
     if (isStreaming) stop();
 
     let id = conversationId;
-    // Authed mode: lazily mint the conversation on the very first send.
-    // `history.replaceState` (instead of router.push) keeps the React tree
-    // alive — a real navigation would unmount useChat and drop the
-    // in-flight message. Public mode skips this — public chats are
-    // ephemeral, no persisted history per visitor.
     if (!id && !isPublic) {
       try {
         const res = await fetch("/api/conversations", { method: "POST" });
@@ -103,7 +115,9 @@ export function ChatProvider({
         id = conversation.id;
         setConversationId(id);
         justCreatedRef.current = true;
-        window.history.replaceState(null, "", `/chat/${id}`);
+        if (!noUrlChange) {
+          window.history.replaceState(null, "", `/chat/${id}`);
+        }
       } catch {
         // If the create fails we still let the message go out — it just
         // won't be persisted. Better than blocking the send.
@@ -114,11 +128,9 @@ export function ChatProvider({
     if (id) body.conversationId = id;
     if (sourceIds && sourceIds.length) body.sourceIds = sourceIds;
     if (publicWorkspaceSlug) body.workspaceSlug = publicWorkspaceSlug;
+    if (anonSessionId) body.anonSessionId = anonSessionId;
 
-    sendMessage(
-      { text: content },
-      Object.keys(body).length ? { body } : undefined,
-    );
+    sendMessage({ text: content }, Object.keys(body).length ? { body } : undefined);
   };
 
   return (

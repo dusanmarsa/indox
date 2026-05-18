@@ -1,0 +1,9 @@
+node_modules
+.next
+dist
+out
+build
+storybook-static
+prisma/generated
+*.lockb
+bun.lock

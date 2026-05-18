@@ -7,7 +7,7 @@ function useIsClient() {
   return useSyncExternalStore(
     () => () => {},
     () => true,
-    () => false,
+    () => false
   );
 }
 
@@ -26,7 +26,7 @@ export function FooterThemeSwitch() {
   if (!isClient) {
     return (
       <span
-        className="inline-block h-[20px] font-mono text-[12px] text-[var(--indox-dim)]"
+        className="inline-block h-5 font-mono text-[12px] text-ink-3"
         style={{ width: 132 }}
         aria-hidden
       />
@@ -41,14 +41,10 @@ export function FooterThemeSwitch() {
 
   return (
     <div className="inline-flex items-center gap-2 font-mono text-[12px]">
-      <span className="text-[var(--indox-dim)]" aria-hidden>
+      <span className="text-ink-3" aria-hidden>
         theme
       </span>
-      <div
-        className="inline-flex items-center"
-        role="group"
-        aria-label="Theme"
-      >
+      <div className="inline-flex items-center" role="group" aria-label="Theme">
         {options.map((o, i) => {
           const active = (theme ?? "system") === o.value;
           return (
@@ -59,9 +55,7 @@ export function FooterThemeSwitch() {
               className="px-1.5 py-0.5 transition-colors"
               style={{
                 color: active ? "var(--indox-text)" : "var(--indox-dim)",
-                borderBottom: active
-                  ? "1px solid var(--indox-accent)"
-                  : "1px solid transparent",
+                borderBottom: active ? "1px solid var(--indox-accent)" : "1px solid transparent",
                 marginLeft: i === 0 ? 0 : 4,
               }}
               aria-pressed={active}

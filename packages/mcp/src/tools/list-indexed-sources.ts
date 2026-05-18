@@ -8,7 +8,7 @@ export const schema = {
     .enum(["ready", "running", "failed", "idle", "any"])
     .optional()
     .describe(
-      "Filter by index status. Defaults to 'ready' (only sources that are fully searchable).",
+      "Filter by index status. Defaults to 'ready' (only sources that are fully searchable)."
     ),
 };
 
@@ -25,9 +25,7 @@ export const metadata: ToolMetadata = {
   },
 };
 
-export default async function listIndexedSourcesTool({
-  status,
-}: InferSchema<typeof schema>) {
+export default async function listIndexedSourcesTool({ status }: InferSchema<typeof schema>) {
   const auth = await authenticate();
   if (isAuthFailure(auth)) return auth;
 
@@ -47,9 +45,10 @@ export default async function listIndexedSourcesTool({
     readyOnly: filter === "ready",
     workspaceIds: auth.workspaceIds,
   });
-  const filtered = filter === "any" || filter === "ready"
-    ? sources
-    : sources.filter((s) => s.indexStatus === filter);
+  const filtered =
+    filter === "any" || filter === "ready"
+      ? sources
+      : sources.filter((s) => s.indexStatus === filter);
 
   if (filtered.length === 0) {
     return {

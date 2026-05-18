@@ -1,23 +1,39 @@
 "use client";
 
-import { Fragment, useMemo, useState, useTransition } from "react";
-import type { DashboardSource, SourceFile } from "@/lib/dashboard-data";
-import { fetchSourceFiles } from "@/app/dashboard/sources/actions";
+import { useMemo, useState, useTransition } from "react";
+import { Accordion as Primitive } from "radix-ui";
+import { ChevronDown, ExternalLink } from "lucide-react";
+import { Accordion, Pill, SearchField, Tag, type PillTone } from "@indox/ui";
+import type { DashboardSource, SourceFile, SourceStatus } from "@/lib/dashboard-data";
+import { fetchSourceFiles } from "@/app/(dashboard)/sources/actions";
+import { TimeAgo } from "./TimeAgo";
+import { useLiveSources } from "./useLiveSources";
 
-function StatusBadge({ status }: { status: "ok" | "warn" | "idle" }) {
-  const map = {
-    ok:   { text: "text-(--indox-ok)",  bg: "bg-(--indox-ok)/10",              dot: "bg-(--indox-ok)" },
-    warn: { text: "text-[#8a6a1e]",    bg: "bg-[#fdf8ec] dark:bg-[#8a6a1e]/20", dot: "bg-[#8a6a1e]" },
-    idle: { text: "text-(--indox-dim)", bg: "bg-(--indox-surface)",             dot: "bg-(--indox-dim)" },
-  };
-  const s = map[status] ?? map.idle;
-  return (
-    <span className={`inline-flex items-center gap-[5px] px-[7px] py-[2px] font-mono text-[10.5px] ${s.text} ${s.bg}`}>
-      <span className={`h-[5px] w-[5px] shrink-0 ${s.dot}`} />
-      {status}
-    </span>
-  );
+function statusPill(status: SourceStatus) {
+  const tone: PillTone =
+    status === "ready"
+      ? "ok"
+      : status === "failed"
+        ? "bad"
+        : status === "indexing"
+          ? "info"
+          : "neutral";
+  const label =
+    status === "ready"
+      ? "indexed"
+      : status === "indexing"
+        ? "indexing"
+        : status === "failed"
+          ? "failed"
+          : "idle";
+  return <Pill tone={tone}>{label}</Pill>;
 }
+
+// Column hiding under md keeps the row legible on phones. From smallest →
+// largest we surface: chevron, name, status. md adds chunks. lg adds type,
+// size, and last-indexed.
+const COLS =
+  "grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-3 md:grid-cols-[24px_minmax(0,1fr)_80px_auto] lg:grid-cols-[24px_minmax(0,1fr)_100px_80px_100px_120px_100px]";
 
 function ExpandedFiles({ files, loading }: { files: SourceFile[] | null; loading: boolean }) {
   const [query, setQuery] = useState("");
@@ -31,8 +47,8 @@ function ExpandedFiles({ files, loading }: { files: SourceFile[] | null; loading
 
   if (loading || !files) {
     return (
-      <div className="bg-(--indox-surface)/40 px-[18px] py-[14px]">
-        <div className="py-6 text-center font-mono text-[11.5px] text-(--indox-dim)">
+      <div className="bg-overlay-tint px-4 py-4">
+        <div className="py-6 text-center font-mono text-[11.5px] text-ink-3">
           loading indexed files…
         </div>
       </div>
@@ -40,116 +56,129 @@ function ExpandedFiles({ files, loading }: { files: SourceFile[] | null; loading
   }
 
   return (
-    <div className="bg-(--indox-surface)/40 px-[18px] py-[14px]">
-      <div className="mb-[10px] flex items-center justify-between gap-3">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+    <div className="bg-overlay-tint px-4 py-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <SearchField
+          mono
           placeholder="filter paths…"
-          className="w-full max-w-xs border border-(--indox-border) bg-background px-[9px] py-[5px] font-mono text-[11.5px] outline-none placeholder:text-(--indox-dim) focus:border-(--indox-muted)"
+          value={query}
+          onChange={(e) => setQuery(e.currentTarget.value)}
+          containerClassName="max-w-xs px-3 py-2"
         />
-        <span className="font-mono text-[10.5px] text-(--indox-dim)">
+        <span className="font-mono text-[10.5px] text-ink-3">
           {filtered.length} of {files.length} files
         </span>
       </div>
       {files.length === 0 ? (
-        <div className="py-6 text-center font-mono text-[11.5px] text-(--indox-dim)">
-          no indexed files
-        </div>
+        <div className="py-6 text-center font-mono text-[11.5px] text-ink-3">no indexed files</div>
       ) : filtered.length === 0 ? (
-        <div className="py-6 text-center font-mono text-[11.5px] text-(--indox-dim)">
-          no paths match “{query}”
+        <div className="py-6 text-center font-mono text-[11.5px] text-ink-3">
+          no paths match &ldquo;{query}&rdquo;
         </div>
       ) : (
-        <div className="max-h-[340px] overflow-auto border border-(--indox-border) bg-background">
-          {filtered.map((f) => (
-            <div
-              key={f.path}
-              className="flex items-center justify-between border-b border-(--indox-border) px-[12px] py-[6px] font-mono text-[11.5px] last:border-b-0"
-            >
-              <span className="truncate text-foreground">{f.path}</span>
-              <span className="ml-3 shrink-0 text-(--indox-dim)">{f.chunks}</span>
-            </div>
-          ))}
+        <div className="max-h-[340px] overflow-auto rounded-md border border-border bg-surface">
+          {filtered.map((f, i) => {
+            const row = (
+              <>
+                <span className="truncate text-ink group-hover:text-brand">{f.path}</span>
+                <span className="ml-3 flex shrink-0 items-center gap-2 text-ink-3">
+                  {f.chunks}
+                  {f.url && (
+                    <ExternalLink className="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
+                  )}
+                </span>
+              </>
+            );
+            const className = `group flex items-center justify-between px-3 py-2 font-mono text-[11.5px] transition-colors ${
+              i < filtered.length - 1 ? "border-b border-border" : ""
+            } ${f.url ? "hover:bg-surface-2" : ""}`;
+            return f.url ? (
+              <a
+                key={f.path}
+                href={f.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={className}
+              >
+                {row}
+              </a>
+            ) : (
+              <div key={f.path} className={className}>
+                {row}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-export default function SourcesTable({ sources }: { sources: DashboardSource[] }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
+export default function SourcesTable({ sources: initial }: { sources: DashboardSource[] }) {
+  const sources = useLiveSources(initial);
   const [cache, setCache] = useState<Record<string, SourceFile[]>>({});
-  const [isPending, startTransition] = useTransition();
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
-  const toggle = (id: string) => {
-    if (expanded === id) {
-      setExpanded(null);
-      return;
-    }
-    setExpanded(id);
-    if (cache[id]) return;
+  const handleValueChange = (id: string) => {
+    if (!id || cache[id]) return;
+    setPendingId(id);
     startTransition(async () => {
       const files = await fetchSourceFiles(id);
       setCache((c) => ({ ...c, [id]: files }));
+      setPendingId((cur) => (cur === id ? null : cur));
     });
   };
 
   return (
-    <table className="w-full border-collapse">
-      <thead>
-        <tr className="border-b border-(--indox-border)">
-          {["", "repository", "type", "chunks", "size", "last indexed", "status"].map((h, i) => (
-            <th
-              key={i}
-              className={`px-[18px] py-[9px] font-mono text-[10px] font-normal uppercase tracking-[0.08em] text-(--indox-dim) ${i === 3 ? "text-right" : "text-left"} ${i === 0 ? "w-[28px] px-[10px]" : ""}`}
-            >
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
+    <div className="overflow-hidden rounded-md border border-border bg-surface">
+      <div
+        className={`${COLS} border-b border-border px-4 py-2.5 font-mono text-[10px] tracking-[0.08em] text-ink-3 uppercase`}
+      >
+        <span />
+        <span>repository</span>
+        <span className="hidden lg:block">type</span>
+        <span className="hidden text-right md:block">chunks</span>
+        <span className="hidden lg:block">size</span>
+        <span className="hidden lg:block">last indexed</span>
+        <span>status</span>
+      </div>
+      <Accordion type="single" collapsible onValueChange={handleValueChange}>
         {sources.map((s) => {
-          const isOpen = expanded === s.id;
           const files = cache[s.id] ?? null;
-          const loading = isOpen && isPending && !files;
+          const loading = pendingId === s.id && !files;
           return (
-            <Fragment key={s.id}>
-              <tr
-                onClick={() => toggle(s.id)}
-                className="cursor-pointer border-b border-(--indox-border) transition-colors hover:bg-(--indox-surface)/60"
-              >
-                <td className="px-[10px] py-[11px] text-center font-mono text-[10px] text-(--indox-dim) select-none">
-                  {isOpen ? "▾" : "▸"}
-                </td>
-                <td className="px-[18px] py-[11px] font-mono text-[12.5px] text-foreground">{s.path}</td>
-                <td className="px-[18px] py-[11px]">
-                  <span className="border border-(--indox-border) px-1.5 py-px font-mono text-[10.5px] text-(--indox-dim)">
-                    {s.type}
+            <Primitive.Item
+              key={s.id}
+              value={s.id}
+              className="border-b border-border last:border-b-0"
+            >
+              <Primitive.Header className="flex">
+                <Primitive.Trigger
+                  className={`group ${COLS} w-full cursor-pointer px-4 py-3 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none`}
+                >
+                  <ChevronDown className="size-3.5 text-ink-3 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                  <span className="truncate font-mono text-[12.5px] text-ink">{s.path}</span>
+                  <span className="hidden lg:flex">
+                    <Tag tone="outline">{s.type}</Tag>
                   </span>
-                </td>
-                <td className="px-[18px] py-[11px] text-right font-mono text-[12px] text-(--indox-muted)">
-                  {s.chunks > 0 ? s.chunks.toLocaleString() : "—"}
-                </td>
-                <td className="px-[18px] py-[11px] font-mono text-[12px] text-(--indox-muted)">{s.size}</td>
-                <td className="px-[18px] py-[11px] font-mono text-[12px] text-(--indox-muted)">{s.sync}</td>
-                <td className="px-[18px] py-[11px]">
-                  <StatusBadge status={s.status} />
-                </td>
-              </tr>
-              {isOpen && (
-                <tr className="border-b border-(--indox-border)">
-                  <td colSpan={7} className="p-0">
-                    <ExpandedFiles files={files} loading={loading} />
-                  </td>
-                </tr>
-              )}
-            </Fragment>
+                  <span className="hidden text-right font-mono text-[12px] text-ink-2 md:block">
+                    {s.chunks > 0 ? s.chunks.toLocaleString() : "—"}
+                  </span>
+                  <span className="hidden font-mono text-[12px] text-ink-2 lg:block">{s.size}</span>
+                  <span className="hidden font-mono text-[12px] text-ink-2 lg:block">
+                    <TimeAgo date={s.indexedAt} />
+                  </span>
+                  <span>{statusPill(s.status)}</span>
+                </Primitive.Trigger>
+              </Primitive.Header>
+              <Primitive.Content className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+                <ExpandedFiles files={files} loading={loading} />
+              </Primitive.Content>
+            </Primitive.Item>
           );
         })}
-      </tbody>
-    </table>
+      </Accordion>
+    </div>
   );
 }

@@ -2,6 +2,22 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Alert,
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  IconButton,
+  Input,
+  Pill,
+  RadioGroup,
+  RadioGroupItem,
+  Label,
+  type PillTone,
+} from "@indox/ui";
+import { Copy, RefreshCw, Trash2 } from "lucide-react";
 
 type SourceDto = {
   id: string;
@@ -27,7 +43,27 @@ type AvailableRepo = {
   indexed: boolean;
 };
 
+type AvailablePage = {
+  pageId: string;
+  title: string;
+  lastEditedTime?: string;
+  indexed: boolean;
+};
+
 type WorkspaceOption = { id: string; name: string };
+
+function statusTone(status: string | null): { tone: PillTone; label: string } {
+  switch (status) {
+    case "ready":
+      return { tone: "ok", label: "ready" };
+    case "running":
+      return { tone: "info", label: "running" };
+    case "failed":
+      return { tone: "bad", label: "failed" };
+    default:
+      return { tone: "neutral", label: status ?? "idle" };
+  }
+}
 
 export default function AdapterManager({
   adapter,
@@ -39,17 +75,16 @@ export default function AdapterManager({
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copyOpen, setCopyOpen] = useState(false);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
-  // ─── browse repos ─────────────────────────────────────────────────────────
   const [browseMode, setBrowseMode] = useState<"user" | "org">("user");
   const [browseValue, setBrowseValue] = useState("");
   const [browseLoading, setBrowseLoading] = useState(false);
   const [available, setAvailable] = useState<AvailableRepo[] | null>(null);
+  const [availablePages, setAvailablePages] = useState<AvailablePage[] | null>(null);
 
-  // ─── add by name ──────────────────────────────────────────────────────────
   const [manualFullName, setManualFullName] = useState("");
+  const isNotion = adapter.kind === "notion";
 
   const refresh = () => router.refresh();
 
@@ -60,7 +95,7 @@ export default function AdapterManager({
     setAvailable(null);
     try {
       const res = await fetch(
-        `/api/adapters/${adapter.id}/available?mode=${browseMode}&value=${encodeURIComponent(browseValue.trim())}`,
+        `/api/adapters/${adapter.id}/available?mode=${browseMode}&value=${encodeURIComponent(browseValue.trim())}`
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "failed");
@@ -72,24 +107,23 @@ export default function AdapterManager({
     }
   };
 
-  const addSource = async (fullName: string) => {
+  const addSource = async (ref: string) => {
     setError(null);
-    setBusy(fullName);
+    setBusy(ref);
     try {
       const res = await fetch(`/api/adapters/${adapter.id}/sources`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName }),
+        body: JSON.stringify({ ref }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "failed");
-      // Mark this row as indexed in the available list optimistically so the
-      // user doesn't accidentally double-click.
       if (available) {
-        setAvailable(
-          available.map((r) =>
-            r.fullName === fullName ? { ...r, indexed: true } : r,
-          ),
+        setAvailable(available.map((r) => (r.fullName === ref ? { ...r, indexed: true } : r)));
+      }
+      if (availablePages) {
+        setAvailablePages(
+          availablePages.map((p) => (p.pageId === ref ? { ...p, indexed: true } : p))
         );
       }
       refresh();
@@ -97,6 +131,22 @@ export default function AdapterManager({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
+    }
+  };
+
+  const browsePages = async () => {
+    setError(null);
+    setBrowseLoading(true);
+    setAvailablePages(null);
+    try {
+      const res = await fetch(`/api/adapters/${adapter.id}/available`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "failed");
+      setAvailablePages(json.pages);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBrowseLoading(false);
     }
   };
 
@@ -126,7 +176,6 @@ export default function AdapterManager({
   };
 
   const copyToWorkspace = async (targetWorkspaceId: string, targetName: string) => {
-    setCopyOpen(false);
     setError(null);
     setBusy("copy");
     setCopyMsg(null);
@@ -164,66 +213,55 @@ export default function AdapterManager({
   };
 
   return (
-    <div className="space-y-8">
-      {error && (
-        <div className="border border-[#8a6a1e]/40 bg-[#fdf8ec] px-[10px] py-[6px] font-mono text-[11px] text-[#8a6a1e] dark:bg-[#8a6a1e]/15">
-          {error}
+    <div className="flex flex-col gap-6">
+      {otherWorkspaces.length > 0 && (
+        <div className="flex items-center justify-end gap-3">
+          {copyMsg && <span className="font-mono text-[11.5px] text-ok">{copyMsg}</span>}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="soft" disabled={busy === "copy"}>
+                <Copy className="size-3.5" />
+                {busy === "copy" ? "copying…" : "Copy to workspace"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {otherWorkspaces.map((w) => (
+                <DropdownMenuItem key={w.id} onSelect={() => copyToWorkspace(w.id, w.name)}>
+                  {w.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )}
 
-      {/* ─── Indexed sources ─────────────────────────────────────────────── */}
-      <section className="border border-(--indox-border)">
-        <div className="flex items-center justify-between border-b border-(--indox-border) bg-(--indox-surface) px-[18px] py-[13px]">
-          <span className="text-[13px] font-medium">Indexed sources</span>
-          <div className="flex items-center gap-4">
-            {otherWorkspaces.length > 0 && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setCopyOpen((v) => !v)}
-                  disabled={busy === "copy"}
-                  className="font-mono text-[11px] text-(--indox-muted) transition-colors hover:text-foreground disabled:opacity-40"
-                >
-                  {busy === "copy" ? "copying…" : "copy to workspace ▾"}
-                </button>
-                {copyOpen && (
-                  <div className="absolute right-0 top-[calc(100%+4px)] z-20 min-w-[180px] border border-(--indox-border) bg-background shadow-md">
-                    {otherWorkspaces.map((w) => (
-                      <button
-                        key={w.id}
-                        type="button"
-                        onClick={() => copyToWorkspace(w.id, w.name)}
-                        className="block w-full px-3 py-[7px] text-left font-mono text-[12px] text-foreground transition-colors hover:bg-muted/60"
-                      >
-                        {w.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            <span className="font-mono text-[11px] text-(--indox-dim)">
-              {adapter.sources.length}
-            </span>
-          </div>
+      {error && (
+        <Alert tone="bad" className="font-mono text-[12px]">
+          {error}
+        </Alert>
+      )}
+
+      <section className="overflow-hidden rounded-md border border-border bg-surface">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <span className="text-[13px] font-medium tracking-[-0.01em] text-ink">
+            Indexed sources
+          </span>
+          <span className="font-mono text-[11px] text-ink-3">{adapter.sources.length}</span>
         </div>
-        {copyMsg && (
-          <div className="border-b border-(--indox-ok)/30 bg-(--indox-ok)/5 px-[18px] py-[8px] font-mono text-[11px] text-(--indox-ok)">
-            {copyMsg}
-          </div>
-        )}
         {adapter.sources.length === 0 ? (
-          <div className="px-[18px] py-12 text-center font-mono text-[12px] text-(--indox-dim)">
+          <div className="px-4 py-12 text-center font-mono text-[12px] text-ink-3">
             no sources yet — add one below
           </div>
         ) : (
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-(--indox-border)">
+              <tr className="border-b border-border">
                 {["source", "status", "chunks", "indexed", ""].map((h, i) => (
                   <th
                     key={i}
-                    className={`px-[18px] py-[9px] font-mono text-[10px] font-normal uppercase tracking-[0.08em] text-(--indox-dim) ${i === 2 ? "text-right" : "text-left"}`}
+                    className={`px-4 py-2.5 font-mono text-[10px] font-normal uppercase tracking-[0.08em] text-ink-3 ${
+                      i === 2 ? "text-right" : "text-left"
+                    }`}
                   >
                     {h}
                   </th>
@@ -231,165 +269,216 @@ export default function AdapterManager({
               </tr>
             </thead>
             <tbody>
-              {adapter.sources.map((s) => (
-                <tr
-                  key={s.id}
-                  className="border-b border-(--indox-border) last:border-b-0 hover:bg-(--indox-surface)/60"
-                >
-                  <td className="px-[18px] py-[11px] font-mono text-[12px] text-foreground">
-                    {s.displayName}
-                  </td>
-                  <td className="px-[18px] py-[11px]">{statusBadge(s.indexStatus)}</td>
-                  <td className="px-[18px] py-[11px] text-right font-mono text-[12px] text-(--indox-muted)">
-                    {s.chunkCount ?? "—"}
-                  </td>
-                  <td className="px-[18px] py-[11px] font-mono text-[12px] text-(--indox-muted)">
-                    {s.indexedAt ? new Date(s.indexedAt).toLocaleString() : "—"}
-                  </td>
-                  <td className="px-[18px] py-[11px]">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => reindex(s.id)}
-                        disabled={busy === s.id || s.indexStatus === "running"}
-                        className="font-mono text-[11px] text-(--indox-muted) transition-colors hover:text-foreground disabled:opacity-40"
-                      >
-                        re-index
-                      </button>
-                      <span className="text-(--indox-dim)">·</span>
-                      <button
-                        onClick={() => removeSource(s.id)}
-                        disabled={busy === s.id}
-                        className="font-mono text-[11px] text-(--indox-muted) transition-colors hover:text-[#8a6a1e] disabled:opacity-40"
-                      >
-                        remove
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {adapter.sources.map((s) => {
+                const status = statusTone(s.indexStatus);
+                return (
+                  <tr
+                    key={s.id}
+                    className="border-b border-border transition-colors last:border-b-0 hover:bg-surface-2"
+                  >
+                    <td className="px-4 py-3 font-mono text-[12px] text-ink">{s.displayName}</td>
+                    <td className="px-4 py-3">
+                      <Pill tone={status.tone}>{status.label}</Pill>
+                      {s.indexError && (
+                        <div
+                          className="mt-1 max-w-xs truncate font-mono text-[10.5px] text-bad"
+                          title={s.indexError}
+                        >
+                          {s.indexError}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-[12px] text-ink-2">
+                      {s.chunkCount ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[12px] text-ink-2">
+                      {s.indexedAt ? new Date(s.indexedAt).toLocaleString() : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <IconButton
+                          aria-label="Re-index source"
+                          title="Re-index"
+                          disabled={busy === s.id || s.indexStatus === "running"}
+                          onClick={() => reindex(s.id)}
+                        >
+                          <RefreshCw
+                            className={`size-3.5 ${busy === s.id ? "animate-spin" : ""}`}
+                          />
+                        </IconButton>
+                        <IconButton
+                          aria-label="Remove source"
+                          title="Remove"
+                          disabled={busy === s.id}
+                          onClick={() => removeSource(s.id)}
+                          className="hover:text-bad"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </IconButton>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </section>
 
-      {/* ─── Add by name ─────────────────────────────────────────────────── */}
-      <section className="border border-(--indox-border)">
-        <div className="border-b border-(--indox-border) bg-(--indox-surface) px-[18px] py-[13px] text-[13px] font-medium">
-          Add by owner/name
+      <section className="overflow-hidden rounded-md border border-border bg-surface">
+        <div className="border-b border-border px-4 py-3 text-[13px] font-medium tracking-[-0.01em] text-ink">
+          {isNotion ? "Add by page id or URL" : "Add by owner/name"}
         </div>
-        <div className="px-[18px] py-[14px] flex gap-2">
-          <input
+        <div className="flex gap-2 px-4 py-4">
+          <Input
             type="text"
             value={manualFullName}
             onChange={(e) => setManualFullName(e.target.value)}
-            placeholder="owner/name"
-            className="flex-1 border border-(--indox-border) bg-background px-[9px] py-[5px] font-mono text-[11.5px] outline-none focus:border-(--indox-muted)"
+            placeholder={isNotion ? "notion.so/… or 32-char id" : "owner/name"}
+            className="font-mono"
           />
-          <button
+          <Button
+            variant="soft"
             onClick={addManual}
             disabled={busy === manualFullName.trim() || !manualFullName.trim()}
-            className="border border-(--indox-border) bg-background px-[12px] py-[5px] font-mono text-[11.5px] text-foreground transition-colors hover:bg-(--indox-surface) disabled:opacity-40"
           >
-            add
-          </button>
+            {busy === manualFullName.trim() ? "adding…" : "add"}
+          </Button>
         </div>
       </section>
 
-      {/* ─── Browse user/org ─────────────────────────────────────────────── */}
-      <section className="border border-(--indox-border)">
-        <div className="border-b border-(--indox-border) bg-(--indox-surface) px-[18px] py-[13px] text-[13px] font-medium">
-          Browse a user or org
-        </div>
-        <div className="px-[18px] py-[14px] space-y-3">
-          <div className="flex gap-3 font-mono text-[11.5px]">
-            {(["user", "org"] as const).map((m) => (
-              <label key={m} className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  name="browse-mode"
-                  checked={browseMode === m}
-                  onChange={() => {
-                    setBrowseMode(m);
-                    setAvailable(null);
-                  }}
-                />
-                <span>{m}</span>
-              </label>
-            ))}
+      {isNotion ? (
+        <section className="overflow-hidden rounded-md border border-border bg-surface">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <span className="text-[13px] font-medium tracking-[-0.01em] text-ink">
+              Browse pages shared with the integration
+            </span>
+            <Button variant="soft" onClick={browsePages} disabled={browseLoading}>
+              {browseLoading ? "loading…" : availablePages ? "refresh" : "browse"}
+            </Button>
           </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={browseValue}
-              onChange={(e) => {
-                setBrowseValue(e.target.value);
-                setAvailable(null);
-              }}
-              placeholder={browseMode === "user" ? "github username" : "github org"}
-              className="flex-1 border border-(--indox-border) bg-background px-[9px] py-[5px] font-mono text-[11.5px] outline-none focus:border-(--indox-muted)"
-            />
-            <button
-              onClick={browse}
-              disabled={browseLoading || !browseValue.trim()}
-              className="border border-(--indox-border) bg-background px-[12px] py-[5px] font-mono text-[11.5px] text-foreground transition-colors hover:bg-(--indox-surface) disabled:opacity-40"
-            >
-              {browseLoading ? "loading…" : "browse"}
-            </button>
-          </div>
-
-          {available && (
-            <div className="max-h-[320px] overflow-auto border border-(--indox-border) bg-(--indox-surface)/40">
-              {available.length === 0 ? (
-                <div className="py-3 text-center font-mono text-[11px] text-(--indox-dim)">
-                  no repos found
+          {availablePages && (
+            <div className="max-h-80 overflow-auto border-t border-border bg-overlay-tint">
+              {availablePages.length === 0 ? (
+                <div className="py-3 text-center font-mono text-[11px] text-ink-3">
+                  no pages found — share a page with the integration in Notion first
                 </div>
               ) : (
-                available.map((r) => (
+                availablePages.map((p, i) => (
                   <div
-                    key={r.fullName}
-                    className="flex items-center justify-between border-b border-(--indox-border) px-[10px] py-[6px] font-mono text-[11.5px] last:border-b-0"
+                    key={p.pageId}
+                    className={`flex items-center justify-between px-3 py-2 font-mono text-[11.5px] ${
+                      i < availablePages.length - 1 ? "border-b border-border" : ""
+                    }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span>{r.fullName}</span>
-                      {r.private ? (
-                        <span className="text-[10px] text-(--indox-dim)">private</span>
-                      ) : null}
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-ink" title={p.title}>
+                        {p.title}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-ink-3">
+                        {p.pageId.slice(0, 8)}…
+                      </span>
                     </div>
-                    {r.indexed ? (
-                      <span className="font-mono text-[10.5px] text-(--indox-ok)">indexed</span>
+                    {p.indexed ? (
+                      <span className="font-mono text-[10.5px] text-ok">indexed</span>
                     ) : (
-                      <button
-                        onClick={() => addSource(r.fullName)}
-                        disabled={busy === r.fullName}
-                        className="border border-(--indox-border) bg-background px-[8px] py-[3px] font-mono text-[10.5px] transition-colors hover:bg-(--indox-surface) disabled:opacity-40"
+                      <Button
+                        size="sm"
+                        variant="soft"
+                        onClick={() => addSource(p.pageId)}
+                        disabled={busy === p.pageId}
                       >
-                        {busy === r.fullName ? "adding…" : "add"}
-                      </button>
+                        {busy === p.pageId ? "adding…" : "add"}
+                      </Button>
                     )}
                   </div>
                 ))
               )}
             </div>
           )}
-        </div>
-      </section>
-    </div>
-  );
-}
+        </section>
+      ) : (
+        <section className="overflow-hidden rounded-md border border-border bg-surface">
+          <div className="border-b border-border px-4 py-3 text-[13px] font-medium tracking-[-0.01em] text-ink">
+            Browse a user or org
+          </div>
+          <div className="flex flex-col gap-3 px-4 py-4">
+            <RadioGroup
+              value={browseMode}
+              onValueChange={(v) => {
+                setBrowseMode(v as "user" | "org");
+                setAvailable(null);
+              }}
+              className="flex gap-4"
+            >
+              {(["user", "org"] as const).map((m) => (
+                <Label
+                  key={m}
+                  className="flex cursor-pointer items-center gap-2 normal-case tracking-normal text-ink-2"
+                >
+                  <RadioGroupItem value={m} />
+                  {m}
+                </Label>
+              ))}
+            </RadioGroup>
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                value={browseValue}
+                onChange={(e) => {
+                  setBrowseValue(e.target.value);
+                  setAvailable(null);
+                }}
+                placeholder={browseMode === "user" ? "github username" : "github org"}
+                className="font-mono"
+              />
+              <Button
+                variant="soft"
+                onClick={browse}
+                disabled={browseLoading || !browseValue.trim()}
+              >
+                {browseLoading ? "loading…" : "browse"}
+              </Button>
+            </div>
 
-function statusBadge(status: string | null) {
-  const map: Record<string, { text: string; bg: string; dot: string }> = {
-    ready:   { text: "text-(--indox-ok)",   bg: "bg-(--indox-ok)/10",                dot: "bg-(--indox-ok)" },
-    running: { text: "text-[#1e5f8a]",     bg: "bg-[#ecf3fd] dark:bg-[#1e5f8a]/20", dot: "bg-[#1e5f8a]" },
-    failed:  { text: "text-[#8a6a1e]",     bg: "bg-[#fdf8ec] dark:bg-[#8a6a1e]/20", dot: "bg-[#8a6a1e]" },
-    idle:    { text: "text-(--indox-dim)",  bg: "bg-(--indox-surface)",               dot: "bg-(--indox-dim)" },
-  };
-  const key = status ?? "idle";
-  const s = map[key] ?? map.idle;
-  return (
-    <span className={`inline-flex items-center gap-[5px] px-[7px] py-[2px] font-mono text-[10.5px] ${s.text} ${s.bg}`}>
-      <span className={`h-[5px] w-[5px] shrink-0 ${s.dot}`} />
-      {key}
-    </span>
+            {available && (
+              <div className="max-h-80 overflow-auto rounded-md border border-border bg-overlay-tint">
+                {available.length === 0 ? (
+                  <div className="py-3 text-center font-mono text-[11px] text-ink-3">
+                    no repos found
+                  </div>
+                ) : (
+                  available.map((r, i) => (
+                    <div
+                      key={r.fullName}
+                      className={`flex items-center justify-between px-3 py-2 font-mono text-[11.5px] ${
+                        i < available.length - 1 ? "border-b border-border" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-ink">{r.fullName}</span>
+                        {r.private && <span className="text-[10px] text-ink-3">private</span>}
+                      </div>
+                      {r.indexed ? (
+                        <span className="font-mono text-[10.5px] text-ok">indexed</span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="soft"
+                          onClick={() => addSource(r.fullName)}
+                          disabled={busy === r.fullName}
+                        >
+                          {busy === r.fullName ? "adding…" : "add"}
+                        </Button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+    </div>
   );
 }

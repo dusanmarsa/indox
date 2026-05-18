@@ -16,8 +16,10 @@ import {
   logger,
   appendMessage,
   getWorkspaceBySlug,
+  getOrCreateAnonConversation,
   checkAndIncrementWorkspaceUsage,
   type AllowedModel,
+  type AnonConversationScope,
 } from "@indox/core";
 import { chatRatelimit, rateLimitKey, ipFromRequest } from "@/lib/ratelimit";
 import { requireWorkspace, UnauthorizedError } from "@/lib/session";
@@ -28,7 +30,7 @@ import { isSameOrigin, csrfReject } from "@/lib/csrf";
 // dropped silently — the LLM sees the resolved set count in the tool result.
 async function resolveSourceNames(
   names: string[],
-  available: Array<{ id: string; displayName: string; externalId: string }>,
+  available: Array<{ id: string; displayName: string; externalId: string }>
 ): Promise<{ ids: string[]; matched: string[]; unmatched: string[] }> {
   const matched: string[] = [];
   const unmatched: string[] = [];
@@ -40,7 +42,7 @@ async function resolveSourceNames(
         s.displayName.toLowerCase() === q ||
         s.externalId.toLowerCase() === q ||
         s.displayName.toLowerCase().includes(q) ||
-        s.externalId.toLowerCase().includes(q),
+        s.externalId.toLowerCase().includes(q)
     );
     if (hit) {
       ids.add(hit.id);
@@ -68,9 +70,7 @@ function stripOrphanedToolCalls(messages: ModelMessage[]): ModelMessage[] {
       out.push(m);
       continue;
     }
-    const kept = m.content.filter(
-      (p) => p.type !== "tool-call" || resultIds.has(p.toolCallId),
-    );
+    const kept = m.content.filter((p) => p.type !== "tool-call" || resultIds.has(p.toolCallId));
     if (kept.length === 0) continue;
     out.push({ ...m, content: kept });
   }
@@ -85,7 +85,7 @@ type ChatContext =
       mode: "authed";
       workspaceId: string;
       model: AllowedModel | string;
-      openaiApiKey: string | null; // null = platform default
+      openaiApiKey: string | null;
       conversationId: string | null;
       persistScope: { workspaceId: string; userId: string };
       rateLimitKey: string;
@@ -95,8 +95,8 @@ type ChatContext =
       workspaceId: string;
       model: AllowedModel | string;
       openaiApiKey: string | null;
-      conversationId: null;
-      persistScope: null;
+      conversationId: string | null;
+      persistScope: AnonConversationScope | null;
       rateLimitKey: string;
     };
 
@@ -107,9 +107,8 @@ export async function POST(req: Request) {
     messages: UIMessage[];
     sourceIds?: string[];
     conversationId?: string;
-    // When set, this is a public-chat call. Skips auth, scopes to the
-    // public workspace, and never persists messages.
     workspaceSlug?: string;
+    anonSessionId?: string;
   };
   const ip = ipFromRequest(req);
 
@@ -143,6 +142,18 @@ export async function POST(req: Request) {
       persistScope: null,
       rateLimitKey: `pub:${ws.id}:${ip}`,
     };
+
+    const rawSession = typeof body.anonSessionId === "string" ? body.anonSessionId.trim() : "";
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (UUID_RE.test(rawSession)) {
+      const anonScope: AnonConversationScope = { workspaceId: ws.id, anonSessionId: rawSession };
+      try {
+        const conv = await getOrCreateAnonConversation(anonScope);
+        ctx = { ...ctx, conversationId: conv.id, persistScope: anonScope };
+      } catch (err) {
+        logger.warn("chat", `anon conversation create failed: ${(err as Error).message}`);
+      }
+    }
   } else {
     let resolved: Awaited<ReturnType<typeof requireWorkspace>>;
     try {
@@ -178,37 +189,32 @@ export async function POST(req: Request) {
     };
   }
 
-  const { messages, conversationId } = body;
-  logger.info(
-    "chat",
-    `request ${ctx.mode} ws=${ctx.workspaceId} (${messages.length} messages)`,
-  );
+  const { messages } = body;
+  const conversationId = ctx.mode === "public" ? ctx.conversationId : (body.conversationId ?? null);
+  logger.info("chat", `request ${ctx.mode} ws=${ctx.workspaceId} (${messages.length} messages)`);
 
   // Persist the user's latest message (authed flow only). Public chats are
   // ephemeral by design — visitors get the answer in-page, no history.
   const latest = messages[messages.length - 1];
-  if (
-    ctx.persistScope &&
-    conversationId &&
-    latest &&
-    latest.role === "user"
-  ) {
+  if (ctx.persistScope && conversationId && latest && latest.role === "user") {
     appendMessage(conversationId, ctx.persistScope, {
       id: latest.id,
       role: latest.role,
       parts: latest.parts,
     }).catch((err) =>
-      logger.warn("chat", `persist user message failed: ${(err as Error).message}`),
+      logger.warn("chat", `persist user message failed: ${(err as Error).message}`)
     );
   }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  prisma.usageLog.upsert({
-    where: { ip_date: { ip, date: today } },
-    update: { queryCount: { increment: 1 } },
-    create: { ip, date: today, queryCount: 1 },
-  }).catch((err) => logger.warn("chat", `usage log write failed: ${err}`));
+  prisma.usageLog
+    .upsert({
+      where: { ip_date: { ip, date: today } },
+      update: { queryCount: { increment: 1 } },
+      create: { ip, date: today, queryCount: 1 },
+    })
+    .catch((err) => logger.warn("chat", `usage log write failed: ${err}`));
 
   const sourcesSnapshot = await listSources({
     readyOnly: true,
@@ -223,9 +229,7 @@ export async function POST(req: Request) {
 
   // Pinned scope from the chat input (@-mentions). When set, every searchCode
   // call is forced to these source IDs regardless of what the model passes.
-  const pinnedIds = (body.sourceIds ?? []).filter((id) =>
-    sourcesList.some((s) => s.id === id),
-  );
+  const pinnedIds = (body.sourceIds ?? []).filter((id) => sourcesList.some((s) => s.id === id));
   const pinnedNames = pinnedIds
     .map((id) => sourcesList.find((s) => s.id === id)?.displayName)
     .filter((x): x is string => !!x);
@@ -237,16 +241,18 @@ export async function POST(req: Request) {
   const tools = {
     searchCode: tool({
       description:
-        "Search indexed code, READMEs, and manifests. By default searches across ALL indexed sources; pass `sources` to narrow only when the user clearly named one. For general questions where no specific source is implied, omit `sources` — a single global search is preferred over fanning out per source.",
+        "Search every indexed source — code, READMEs, manifests, AND prose (Notion pages, notes, transcripts, docs). The returned chunks contain real body content, not just titles; quote from them when the user asks what a page or document says. By default searches across ALL indexed sources; pass `sources` to narrow only when the user clearly named one. For general questions where no specific source is implied, omit `sources` — a single global search is preferred over fanning out per source.",
       inputSchema: z.object({
         query: z
           .string()
-          .describe("Semantic search query — the user's question rephrased to focus on the code aspect."),
+          .describe(
+            "Semantic search query — the user's question, optionally rephrased toward terms likely to appear in the indexed content (identifiers and file names for code sources, topical keywords for prose sources). Multi-word queries retrieve better than single nouns; prefer the user's phrasing over a one-word abstraction of it."
+          ),
         sources: z
           .array(z.string())
           .optional()
           .describe(
-            "Optional. Restrict retrieval to these sources by display name. Only set this when the user explicitly named a source. Do NOT guess — if you're unsure which source contains the answer, omit this and do one global search.",
+            "Optional. Restrict retrieval to these sources by display name. Only set this when the user explicitly named a source. Do NOT guess — if you're unsure which source contains the answer, omit this and do one global search."
           ),
       }),
       execute: async ({ query, sources }) => {
@@ -334,9 +340,7 @@ Every searchCode call is automatically restricted to them — you do not need to
 
   // Pick the OpenAI provider: BYO key for public workspaces that set one,
   // otherwise the platform default (env-resolved).
-  const provider = ctx.openaiApiKey
-    ? createOpenAI({ apiKey: ctx.openaiApiKey })
-    : openai;
+  const provider = ctx.openaiApiKey ? createOpenAI({ apiKey: ctx.openaiApiKey }) : openai;
 
   const result = streamText({
     model: provider(ctx.model),
@@ -371,7 +375,10 @@ Each chunk has a \`confidence\` field of "strong" or "weak". Weak chunks are ret
 CITATIONS:
 Every chunk returned by searchCode is an object { url, text }. The url is a SHA-pinned blob URL with a #L<start>-L<end> fragment. When you cite or link to a snippet, copy the url field CHARACTER-FOR-CHARACTER. Do not modify the path, branch, or line range. Do not invent a URL from a path you saw in the text — only use the url field. If a chunk's url is null, cite the file path as plain text with no hyperlink. Never write /blob/main/… or /blob/master/… yourself.
 
-Be concise.`,
+ANSWERING CONTENT QUESTIONS:
+When the user asks what a page, document, or section says ("what does X cover", "summarise this", "what's in jordan"), the chunk \`text\` field contains the actual body content — not just titles. Read it and answer from it. Quote or paraphrase specific sentences. A reply like "the page is titled X — visit the link for details" is a failure when chunk text is available; the whole point of the index is that you don't have to send the user to the source.
+
+Be concise — but "concise" means no filler, not "withhold content the user asked for." If the user asked what a document says, the body of your reply should be the answer, drawn from chunk text.`,
     messages: stripOrphanedToolCalls(await convertToModelMessages(messages)),
     tools,
     stopWhen: stepCountIs(8),
@@ -394,10 +401,7 @@ Be concise.`,
         role: responseMessage.role,
         parts: responseMessage.parts,
       }).catch((err) =>
-        logger.warn(
-          "chat",
-          `persist assistant message failed: ${(err as Error).message}`,
-        ),
+        logger.warn("chat", `persist assistant message failed: ${(err as Error).message}`)
       );
     },
   });

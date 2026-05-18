@@ -1,68 +1,91 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
+import Link from "next/link";
+import type { Route } from "next";
+import { useTheme } from "next-themes";
+import { Sun, Moon, Star } from "lucide-react";
+import { useSyncExternalStore } from "react";
 
 const LINKS = [
-  { href: "#how", label: "how it works" },
-  { href: "#deploy", label: "self-host" },
-  { href: "#demo", label: "demo" },
+  { href: "#features", label: "Product" },
+  { href: "#deploy", label: "Self-host" },
+  { href: "/login", label: "Sign in" },
 ];
 
 const GITHUB_URL = "https://github.com/dusanmarsa/indox";
 
-export function Nav() {
-  const [scrolled, setScrolled] = useState(false);
+// `useSyncExternalStore` with a constant `true` snapshot gives us the
+// post-hydration boolean without the "setState-in-effect" pattern lint flags.
+const subscribe = () => () => {};
+const useHasMounted = () =>
+  useSyncExternalStore(
+    subscribe,
+    () => true,
+    () => false
+  );
 
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 48);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+export function Nav() {
+  const { resolvedTheme, setTheme } = useTheme();
+  const mounted = useHasMounted();
+  const isDark = resolvedTheme === "dark";
 
   return (
     <nav
-      className={cn(
-        "fixed  inset-x-0 top-0 z-40 border-b border-transparent transition-colors",
-        scrolled && "border-border backdrop-blur-md bg-background",
-      )}
+      className="fixed left-1/2 top-3.5 z-50 flex -translate-x-1/2 items-center gap-1 rounded-pill border py-1.5 pl-[18px] pr-1.5 backdrop-blur-[18px] backdrop-saturate-[140%]"
+      style={{
+        background: "var(--indox-nav-bg)",
+        borderColor: "var(--indox-nav-border)",
+        boxShadow: "var(--indox-nav-shadow)",
+      }}
     >
-      <div className="container px-10 mx-auto flex h-13.5 items-center justify-between">
-        <a
-          href="#top"
-          className="flex items-center gap-2 font-mono text-[13px] text-foreground"
-          aria-label="Indox home"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/indox-mark-light.svg" alt="" className="block h-5 w-5 rounded-[3px] dark:hidden" />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/indox-mark-dark.svg"  alt="" className="hidden h-5 w-5 rounded-[3px] dark:block" />
-          indox<span className="text-(--indox-accent)">.</span>
-        </a>
+      <Link
+        href={"/" as Route}
+        className="mr-1 flex items-center gap-[9px] whitespace-nowrap border-r pr-3.5 font-mono text-[13px] text-ink"
+        style={{ borderColor: "var(--indox-nav-border)" }}
+      >
+        <span
+          aria-hidden
+          className="inline-block h-[7px] w-[7px] rounded-full bg-brand"
+          style={{ boxShadow: "var(--indox-dot-glow)" }}
+        />
+        indox<span className="text-brand">.</span>
+      </Link>
 
-        <div className="flex items-center gap-7">
-          <div className="hidden items-center gap-7 sm:flex">
-            {LINKS.map((l) => (
-              <a
-                key={l.href}
-                href={l.href}
-                className="text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {l.label}
-              </a>
-            ))}
-          </div>
-          <a
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="border border-border px-3 py-1.5 font-mono text-[12px] text-foreground transition-colors hover:text-muted-foreground"
-          >
-            github ↗
-          </a>
-        </div>
-      </div>
+      {LINKS.map((l) => (
+        <Link
+          key={l.href}
+          href={l.href as Route}
+          className="rounded-pill px-3.5 py-[7px] font-mono text-[12.5px] whitespace-nowrap text-ink-2 transition-colors hover:bg-overlay-1 hover:text-ink"
+        >
+          {l.label}
+        </Link>
+      ))}
+
+      <a
+        href={GITHUB_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="ml-1 inline-flex items-center gap-1.5 rounded-pill border border-overlay-3 bg-overlay-2 px-3 py-1.5 font-mono text-[12px] text-ink transition-colors hover:bg-overlay-3"
+      >
+        <Star className="size-3" /> Star
+      </a>
+
+      <button
+        type="button"
+        aria-label="Toggle theme"
+        onClick={() => setTheme(isDark ? "light" : "dark")}
+        className="ml-1 inline-flex h-[30px] w-[30px] items-center justify-center rounded-full text-ink-2 transition-colors hover:bg-overlay-1 hover:text-ink"
+      >
+        {mounted ? (
+          isDark ? (
+            <Sun className="size-3.5" />
+          ) : (
+            <Moon className="size-3.5" />
+          )
+        ) : (
+          <Moon className="size-3.5" />
+        )}
+      </button>
     </nav>
   );
 }
